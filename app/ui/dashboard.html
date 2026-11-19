@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="tr" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>sentiment-engine | Canlı NLP & Akış Kontrol Paneli</title>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --panel: #131a2a;
+      --panel-alt: #1a2337;
+      --border: #26324d;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #6366f1;
+      --accent-hover: #818cf8;
+      --pos: #10b981;
+      --pos-bg: rgba(16, 185, 129, 0.14);
+      --neg: #f43f5e;
+      --neg-bg: rgba(244, 63, 94, 0.14);
+      --neu: #38bdf8;
+      --neu-bg: rgba(56, 189, 248, 0.14);
+      --warn: #f59e0b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      background: radial-gradient(circle at top right, #161f38 0%, var(--bg) 55%);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 24px;
+      line-height: 1.5;
+    }
+    .container { max-width: 1320px; margin: 0 auto; }
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 22px;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-icon {
+      width: 42px; height: 42px; border-radius: 10px;
+      background: linear-gradient(135deg, #6366f1, #06b6d4);
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 20px; color: #fff;
+      box-shadow: 0 6px 20px rgba(99, 102, 241, 0.35);
+    }
+    .brand h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+    .brand p { font-size: 13px; color: var(--muted); }
+    .header-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 600;
+      background: var(--panel); border: 1px solid var(--border);
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pos); box-shadow: 0 0 8px var(--pos); }
+    .dot.degraded { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+
+    /* KPI Grid */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+      margin-bottom: 22px;
+    }
+    .kpi-card {
+      background: rgba(19, 26, 42, 0.85);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .kpi-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .kpi-value { font-size: 22px; font-weight: 700; margin-top: 4px; }
+    .kpi-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+    /* Main 2-Column Layout */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1.05fr 1.25fr;
+      gap: 20px;
+    }
+    @media (max-width: 1024px) {
+      .main-grid { grid-template-columns: 1fr; }
+    }
+    .card {
+      background: rgba(19, 26, 42, 0.9);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .card-title { font-size: 16px; font-weight: 700; }
+    .card-subtitle { font-size: 12px; color: var(--muted); }
+
+    textarea, select, input[type="number"] {
+      width: 100%;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    textarea:focus, select:focus, input[type="number"]:focus {
+      border-color: var(--accent);
+    }
+    textarea { min-height: 115px; resize: vertical; }
+
+    .preset-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 5px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .chip:hover { border-color: var(--accent); background: rgba(99, 102, 241, 0.15); }
+
+    .controls-row {
+      display: flex;
+      wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 13px;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.15s;
+      color: #fff;
+    }
+    .btn-primary { background: var(--accent); }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-pos { background: rgba(16, 185, 129, 0.2); border-color: var(--pos); color: #34d399; }
+    .btn-pos:hover { background: rgba(16, 185, 129, 0.35); }
+    .btn-neg { background: rgba(244, 63, 94, 0.2); border-color: var(--neg); color: #fb7185; }
+    .btn-neg:hover { background: rgba(244, 63, 94, 0.35); }
+    .btn-neu { background: rgba(56, 189, 248, 0.2); border-color: var(--neu); color: #7dd3fc; }
+    .btn-neu:hover { background: rgba(56, 189, 248, 0.35); }
+    .btn-outline { background: var(--panel-alt); border-color: var(--border); color: var(--text); }
+    .btn-outline:hover { border-color: var(--accent); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Results List */
+    .results-list { display: flex; flex-direction: column; gap: 10px; max-height: 360px; overflow-y: auto; }
+    .result-item {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .result-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+    .result-text { font-size: 14px; font-weight: 500; word-break: break-word; }
+    .badge {
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .badge.positive { background: var(--pos-bg); color: var(--pos); border: 1px solid rgba(16, 185, 129, 0.4); }
+    .badge.negative { background: var(--neg-bg); color: var(--neg); border: 1px solid rgba(244, 63, 94, 0.4); }
+    .badge.neutral { background: var(--neu-bg); color: var(--neu); border: 1px solid rgba(56, 189, 248, 0.4); }
+
+    .bar-bg { width: 100%; height: 7px; background: var(--panel-alt); border-radius: 999px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 999px; transition: width 0.3s ease; }
+    .bar-fill.positive { background: var(--pos); }
+    .bar-fill.negative { background: var(--neg); }
+    .bar-fill.neutral { background: var(--neu); }
+    .result-meta { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+
+    /* Topic Tabs */
+    .tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+    .tab {
+      padding: 7px 14px;
+      border-radius: 9px;
+      font-size: 13px;
+      font-weight: 600;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .tab.active {
+      background: rgba(99, 102, 241, 0.2);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .window-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .window-box {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+    }
+    .window-title { font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; }
+    .window-score { font-size: 24px; font-weight: 800; margin: 6px 0; }
+    .dist-bar {
+      display: flex;
+      height: 10px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: var(--panel-alt);
+      margin: 8px 0;
+    }
+    .dist-legend { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+
+    /* Chart Box */
+    .chart-box {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+    }
+    svg.sparkline { width: 100%; height: 150px; display: block; }
+    .spike-panel {
+      background: rgba(99, 102, 241, 0.07);
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .spike-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+    .toast {
+      font-size: 12px;
+      color: var(--muted);
+      min-height: 18px;
+    }
+    a.link { color: var(--accent-hover); text-decoration: none; font-size: 13px; }
+    a.link:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <div class="brand-icon">SE</div>
+        <div>
+          <h1>sentiment-engine</h1>
+          <p>Canlı Yayın, Film & Piyasa Asenkron NLP Duygu Analizi Mikroservisi</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <span class="pill"><span id="health-dot" class="dot"></span> <span id="health-status">Bağlanıyor...</span></span>
+        <label class="pill" style="cursor:pointer;">
+          <input type="checkbox" id="auto-refresh" checked /> Otomatik Yenile (5sn)
+        </label>
+        <a class="link" href="/docs" target="_blank">Swagger API (/docs) ↗</a>
+      </div>
+    </header>
+
+    <!-- System KPI Bar -->
+    <section class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">NLP Modeli & Cihaz</div>
+        <div class="kpi-value" id="kpi-model" style="font-size:15px; word-break:break-all;">-</div>
+        <div class="kpi-sub" id="kpi-analyzed">Toplam Analiz: 0</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">PostgreSQL Veritabanı</div>
+        <div class="kpi-value" id="kpi-db">-</div>
+        <div class="kpi-sub" id="kpi-db-latency">Gecikme: - ms</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">PipelineOrchestrator & Worker</div>
+        <div class="kpi-value" id="kpi-cycles">0 Döngü</div>
+        <div class="kpi-sub" id="kpi-records">DB Kayıt: 0 | Durum: idle</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Dead Letter Queue (DLQ)</div>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div class="kpi-value" id="kpi-dlq">0 Bekleyen</div>
+          <button class="btn btn-outline" style="padding:5px 10px; font-size:11px;" onclick="recoverDLQ()">DLQ Kurtar</button>
+        </div>
+        <div class="kpi-sub" id="kpi-dlq-corrupted">İzole Bozuk Kayıt: 0</div>
+      </div>
+    </section>
+
+    <div class="main-grid">
+      <!-- Left Column: Interactive NLP Analyzer -->
+      <section class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Anlık Metin & Batch Duygu Analizi</div>
+            <div class="card-subtitle"><code>POST /api/v1/analyze</code> — Türkçe ve İngilizce tekli veya çoklu satır</div>
+          </div>
+        </div>
+
+        <div class="preset-chips">
+          <button class="chip" onclick="setSample('stream')">🎮 Twitch/Kick Örneği</button>
+          <button class="chip" onclick="setSample('movie')">🎬 Film Yorumu Örneği</button>
+          <button class="chip" onclick="setSample('market')">📈 Piyasa Haberi Örneği</button>
+          <button class="chip" onclick="setSample('mixed')">🌍 Karışık Batch (5 Cümle)</button>
+        </div>
+
+        <textarea id="analyze-input" placeholder="Her satıra bir cümle yazın...">POGGERS efsane klip, harika clutch aldın!! 🔥
+Senaryo çok kopuktu, 2 saatim boşa gitti tam bir hayal kırıklığı.
+Piyasalar Fed faiz kararı öncesi yatay seyrediyor.</textarea>
+
+        <div class="controls-row">
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <select id="analyze-topic" style="width:auto;">
+              <option value="stream_chat">Konu: stream_chat</option>
+              <option value="movie_reviews">Konu: movie_reviews</option>
+              <option value="market_pulse">Konu: market_pulse</option>
+              <option value="general">Konu: general</option>
+            </select>
+            <label style="font-size:13px; color:var(--muted); display:flex; align-items:center; gap:6px; cursor:pointer;">
+              <input type="checkbox" id="analyze-persist" checked /> Veritabanına Kaydet
+            </label>
+          </div>
+          <button class="btn btn-primary" id="btn-analyze" onclick="runAnalyze()">Analiz Et ⚡</button>
+        </div>
+
+        <div id="analyze-summary" class="card-subtitle">Sonuçlar aşağıda listelenir:</div>
+        <div id="analyze-results" class="results-list"></div>
+      </section>
+
+      <!-- Right Column: Live Stream Analytics & Spike Trigger -->
+      <section class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Canlı Akış Analitiği & Zaman Serisi</div>
+            <div class="card-subtitle"><code>GET /api/v1/sentiment/{topic}</code> — 5dk / 1sa Hareketli Ortalama</div>
+          </div>
+          <div class="tabs">
+            <button class="tab active" data-topic="stream_chat" onclick="selectTopic('stream_chat')">🎮 stream_chat</button>
+            <button class="tab" data-topic="movie_reviews" onclick="selectTopic('movie_reviews')">🎬 movie_reviews</button>
+            <button class="tab" data-topic="market_pulse" onclick="selectTopic('market_pulse')">📈 market_pulse</button>
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:13px; color:var(--muted);">Toplam Biriken Mesaj Hacmi: <strong id="topic-total" style="color:var(--text);">0</strong></span>
+          <button class="btn btn-outline" style="padding:5px 10px; font-size:12px;" onclick="refreshAll()">Yenile ↻</button>
+        </div>
+
+        <!-- 5m and 1h Moving Average Windows -->
+        <div class="window-grid">
+          <div class="window-box">
+            <div class="window-title"><span>SON 5 DAKİKA (5m)</span><span id="w5m-vol">0 mesaj</span></div>
+            <div class="window-score" id="w5m-score">0.000</div>
+            <div class="dist-bar" id="w5m-bar"></div>
+            <div class="dist-legend" id="w5m-legend"><span>Poz: 0%</span><span>Nötr: 0%</span><span>Neg: 0%</span></div>
+          </div>
+          <div class="window-box">
+            <div class="window-title"><span>SON 1 SAAT (1h)</span><span id="w1h-vol">0 mesaj</span></div>
+            <div class="window-score" id="w1h-score">0.000</div>
+            <div class="dist-bar" id="w1h-bar"></div>
+            <div class="dist-legend" id="w1h-legend"><span>Poz: 0%</span><span>Nötr: 0%</span><span>Neg: 0%</span></div>
+          </div>
+        </div>
+
+        <!-- Time Series Sparkline -->
+        <div class="chart-box">
+          <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+            <span style="font-size:12px; color:var(--muted);">Dakikalık Duygu Skoru Zaman Serisi (-1.0 Negatif … +1.0 Pozitif)</span>
+            <span style="font-size:12px; color:var(--muted);" id="ts-buckets">0 nokta</span>
+          </div>
+          <svg id="ts-chart" class="sparkline" viewBox="0 0 600 150" preserveAspectRatio="none"></svg>
+        </div>
+
+        <!-- Synthetic Spike Trigger -->
+        <div class="spike-panel">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <div>
+              <div style="font-size:13px; font-weight:700;">Sentetik Veri Patlaması (Spike) Simülatörü</div>
+              <div style="font-size:12px; color:var(--muted);"><code>POST /api/v1/simulation/trigger</code> — Seçili konuya anlık dalga gönder</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:12px; color:var(--muted);">Adet:</span>
+              <input type="number" id="spike-size" value="25" min="1" max="200" style="width:72px; padding:6px 8px;" />
+            </div>
+          </div>
+          <div class="spike-buttons">
+            <button class="btn btn-pos" onclick="triggerSpike('positive')">🚀 Pozitif Hype Patlaması (+)</button>
+            <button class="btn btn-neg" onclick="triggerSpike('negative')">🔥 Negatif Tepki Patlaması (-)</button>
+            <button class="btn btn-neu" onclick="triggerSpike('neutral')">⚖️ Nötr Akış Dalga</button>
+          </div>
+          <div id="spike-toast" class="toast"></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    let currentTopic = 'stream_chat';
+
+    const SAMPLES = {
+      stream: [
+        "POGGERS efsane klip!! 🔥",
+        "Harika clutch aldın helal olsun!",
+        "Lag var yayında ses kayıyor rezalet 😡"
+      ],
+      movie: [
+        "Masterpiece! Directing and score were phenomenal ❤️",
+        "Senaryo çok kopuktu, 2 saatim boşa gitti tam bir hayal kırıklığı",
+        "Görsel efektler fena değil ama kurgu ortalama kalmış"
+      ],
+      market: [
+        "BIST ve teknoloji hisselerinde güçlü yükseliş, rekor hacim! 📈",
+        "Enflasyon endişesiyle sert satış dalgası, piyasalar çakıldı 📉",
+        "Piyasalar Fed faiz kararı öncesi yatay seyrediyor"
+      ],
+      mixed: [
+        "LETS GOOO insane play, chat going crazy 🚀",
+        "Terrible pacing and wooden dialogue, worst movie of the year 👎",
+        "Bullish breakout above resistance with strong institutional buying",
+        "Enflasyon endişesiyle sert satış dalgası, piyasalar çakıldı",
+        "Central bank minutes scheduled for release at 14:00 UTC."
+      ]
+    };
+
+    function setSample(key) {
+      document.getElementById('analyze-input').value = SAMPLES[key].join('\n');
+      if (key === 'stream') document.getElementById('analyze-topic').value = 'stream_chat';
+      if (key === 'movie') document.getElementById('analyze-topic').value = 'movie_reviews';
+      if (key === 'market') document.getElementById('analyze-topic').value = 'market_pulse';
+    }
+
+    function scoreColor(score) {
+      if (score > 0.08) return 'var(--pos)';
+      if (score < -0.08) return 'var(--neg)';
+      return 'var(--neu)';
+    }
+
+    async function loadHealth() {
+      try {
+        const res = await fetch('/api/v1/health');
+        const data = await res.json();
+        const dot = document.getElementById('health-dot');
+        dot.className = 'dot ' + (data.status === 'healthy' ? '' : 'degraded');
+        document.getElementById('health-status').textContent =
+          `${data.status.toUpperCase()} (${data.work_mode})`;
+
+        document.getElementById('kpi-model').textContent =
+          `${data.nlp_model.model_name.split('/').pop()} (${data.nlp_model.backend})`;
+        document.getElementById('kpi-analyzed').textContent =
+          `Toplam Analiz: ${data.nlp_model.total_analyzed} | Cihaz: ${data.nlp_model.device.toUpperCase()}`;
+
+        document.getElementById('kpi-db').textContent =
+          data.database.connected ? 'Bağlı (Aktif)' : 'Bağlantı Hatası';
+        document.getElementById('kpi-db').style.color =
+          data.database.connected ? 'var(--pos)' : 'var(--neg)';
+        document.getElementById('kpi-db-latency').textContent =
+          `Gecikme: ${data.database.latency_ms} ms`;
+
+        const orch = data.worker.orchestrator;
+        document.getElementById('kpi-cycles').textContent =
+          `${orch.total_cycles_completed} Döngü`;
+        document.getElementById('kpi-records').textContent =
+          `Kaydedilen: ${orch.total_records_persisted} | Son: ${orch.last_cycle_status}`;
+
+        document.getElementById('kpi-dlq').textContent =
+          `${data.dlq.pending_records} Bekleyen`;
+        document.getElementById('kpi-dlq-corrupted').textContent =
+          `İzole Bozuk Kayıt: ${data.dlq.corrupted_records}`;
+      } catch (err) {
+        document.getElementById('health-status').textContent = 'Bağlantı Hatası';
+      }
+    }
+
+    function renderWindow(prefix, win) {
+      document.getElementById(`${prefix}-vol`).textContent = `${win.message_volume} mesaj`;
+      const scoreEl = document.getElementById(`${prefix}-score`);
+      const sign = win.moving_avg_sentiment > 0 ? '+' : '';
+      scoreEl.textContent = `${sign}${win.moving_avg_sentiment.toFixed(3)}`;
+      scoreEl.style.color = scoreColor(win.moving_avg_sentiment);
+
+      const posPct = Math.round((win.sentiment_ratios.positive || 0) * 100);
+      const neuPct = Math.round((win.sentiment_ratios.neutral || 0) * 100);
+      const negPct = Math.round((win.sentiment_ratios.negative || 0) * 100);
+
+      document.getElementById(`${prefix}-bar`).innerHTML = `
+        <div style="width:${posPct}%; background:var(--pos);"></div>
+        <div style="width:${neuPct}%; background:var(--neu);"></div>
+        <div style="width:${negPct}%; background:var(--neg);"></div>
+      `;
+      document.getElementById(`${prefix}-legend`).innerHTML = `
+        <span style="color:var(--pos);">Poz: ${posPct}% (${win.sentiment_distribution.positive || 0})</span>
+        <span style="color:var(--neu);">Nötr: ${neuPct}% (${win.sentiment_distribution.neutral || 0})</span>
+        <span style="color:var(--neg);">Neg: ${negPct}% (${win.sentiment_distribution.negative || 0})</span>
+      `;
+    }
+
+    function renderSparkline(series) {
+      const svg = document.getElementById('ts-chart');
+      document.getElementById('ts-buckets').textContent = `${series.length} zaman dilimi`;
+      const w = 600, h = 150, pad = 18;
+      const midY = h / 2;
+
+      let html = `<line x1="0" y1="${midY}" x2="${w}" y2="${midY}" stroke="#26324d" stroke-dasharray="4 4" stroke-width="1"/>`;
+      if (!series.length) {
+        html += `<text x="${w/2}" y="${midY}" fill="#94a3b8" font-size="13" text-anchor="middle">Henüz zaman serisi verisi yok</text>`;
+        svg.innerHTML = html;
+        return;
+      }
+
+      const pts = series.map((pt, idx) => {
+        const x = series.length === 1 ? w / 2 : pad + (idx / (series.length - 1)) * (w - pad * 2);
+        const clamped = Math.max(-1, Math.min(1, pt.avg_sentiment_score));
+        const y = midY - clamped * (midY - pad);
+        return { x, y, pt };
+      });
+
+      if (pts.length > 1) {
+        const poly = pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+        html += `<polyline fill="none" stroke="#6366f1" stroke-width="2.5" points="${poly}"/>`;
+      }
+      for (const p of pts) {
+        const c = scoreColor(p.pt.avg_sentiment_score);
+        html += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4.5" fill="${c}">
+          <title>${new Date(p.pt.timestamp).toLocaleTimeString()} | Skor: ${p.pt.avg_sentiment_score} | Hacim: ${p.pt.message_volume}</title>
+        </circle>`;
+      }
+      svg.innerHTML = html;
+    }
+
+    async function loadTopicAnalytics() {
+      try {
+        const res = await fetch(`/api/v1/sentiment/${currentTopic}`);
+        const data = await res.json();
+        document.getElementById('topic-total').textContent = data.total_volume;
+        renderWindow('w5m', data.window_5m);
+        renderWindow('w1h', data.window_1h);
+        renderSparkline(data.time_series || []);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    function selectTopic(topic) {
+      currentTopic = topic;
+      document.querySelectorAll('.tab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.topic === topic);
+      });
+      loadTopicAnalytics();
+    }
+
+    async function runAnalyze() {
+      const raw = document.getElementById('analyze-input').value;
+      const texts = raw.split('\n').map(s => s.trim()).filter(Boolean);
+      if (!texts.length) return;
+
+      const btn = document.getElementById('btn-analyze');
+      btn.disabled = true;
+      btn.textContent = 'Analiz Ediliyor...';
+
+      const topic = document.getElementById('analyze-topic').value;
+      const persist = document.getElementById('analyze-persist').checked;
+
+      try {
+        const res = await fetch('/api/v1/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ texts, topic, source: 'web_dashboard', persist })
+        });
+        const data = await res.json();
+        document.getElementById('analyze-summary').textContent =
+          `${data.batch_size} metin ${data.total_processing_time_ms.toFixed(1)} ms içinde analiz edildi ` +
+          `(${data.persisted ? 'Veritabanına kaydedildi ✓' : 'Geçici analiz'})`;
+
+        const container = document.getElementById('analyze-results');
+        container.innerHTML = data.results.map(item => {
+          const pct = Math.round(item.confidence_score * 100);
+          const sign = item.sentiment_score > 0 ? '+' : '';
+          return `
+            <div class="result-item">
+              <div class="result-top">
+                <div class="result-text">${escapeHtml(item.text)}</div>
+                <span class="badge ${item.sentiment_label}">${item.sentiment_label}</span>
+              </div>
+              <div class="bar-bg">
+                <div class="bar-fill ${item.sentiment_label}" style="width:${pct}%"></div>
+              </div>
+              <div class="result-meta">
+                <span>Güven Skoru: <strong>%${pct}</strong> (${item.confidence_score.toFixed(3)})</span>
+                <span>Polarite: <strong>${sign}${item.sentiment_score.toFixed(3)}</strong></span>
+                <span>Süre: ${item.processing_time_ms.toFixed(1)} ms</span>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        if (persist) {
+          refreshAll();
+        }
+      } catch (err) {
+        document.getElementById('analyze-summary').textContent = 'Hata: ' + err;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Analiz Et ⚡';
+      }
+    }
+
+    async function triggerSpike(bias) {
+      const batchSize = parseInt(document.getElementById('spike-size').value || '25', 10);
+      const toast = document.getElementById('spike-toast');
+      toast.textContent = `${currentTopic} konusuna ${batchSize} adet '${bias}' dalga gönderiliyor...`;
+      try {
+        const res = await fetch('/api/v1/simulation/trigger', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            topic: currentTopic,
+            sentiment_bias: bias,
+            batch_size: batchSize
+          })
+        });
+        const data = await res.json();
+        toast.textContent =
+          `✓ ${data.ingested_count} mesaj üretildi ve analiz edildi (${data.processing_time_ms.toFixed(1)} ms) — ` +
+          `Dağılım: +${data.distribution.positive} / ~${data.distribution.neutral} / -${data.distribution.negative}`;
+        await refreshAll();
+      } catch (err) {
+        toast.textContent = 'Spike hatası: ' + err;
+      }
+    }
+
+    async function recoverDLQ() {
+      const res = await fetch('/api/v1/orchestrator/recover-dlq', { method: 'POST' });
+      const data = await res.json();
+      alert(`DLQ Kurtarma Durumu: ${data.status}\nKurtarılan: ${data.recovered_count}\nBozuk İzole: ${data.corrupted_count}`);
+      refreshAll();
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/[&<>"']/g, m => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[m]));
+    }
+
+    async function refreshAll() {
+      await Promise.all([loadHealth(), loadTopicAnalytics()]);
+    }
+
+    refreshAll();
+    runAnalyze();
+    setInterval(() => {
+      if (document.getElementById('auto-refresh').checked) {
+        refreshAll();
+      }
+    }, 5000);
+  </script>
+</body>
+</html>

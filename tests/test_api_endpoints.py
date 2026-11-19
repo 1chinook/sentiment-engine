@@ -144,3 +144,12 @@ async def test_health_endpoint(async_client: httpx.AsyncClient) -> None:
     assert data["dlq"]["pending_records"] == 0
     assert data["dlq"]["corrupted_records"] == 0
     assert data["nlp_model"]["loaded"] is True
+
+
+@pytest.mark.asyncio
+async def test_dashboard_endpoint(async_client: httpx.AsyncClient) -> None:
+    """GET /dashboard serves the interactive live sentiment testing dashboard."""
+    resp = await async_client.get("/dashboard")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers.get("content-type", "")
+    assert "sentiment-engine" in resp.text

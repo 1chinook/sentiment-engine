@@ -5,8 +5,11 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
+import aiofiles
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.api.v1.router import router as v1_router
@@ -118,9 +121,17 @@ def create_app(
             "service": active_settings.APP_NAME,
             "version": active_settings.APP_VERSION,
             "work_mode": active_settings.WORK_MODE.value,
+            "dashboard_url": "/dashboard",
             "docs_url": "/docs",
             "health_url": "/api/v1/health",
         }
+
+    @application.get("/dashboard", response_class=HTMLResponse, tags=["ui"])
+    async def dashboard() -> HTMLResponse:
+        dashboard_path = Path(__file__).resolve().parent / "ui" / "dashboard.html"
+        async with aiofiles.open(dashboard_path, mode="r", encoding="utf-8") as fp:
+            content = await fp.read()
+        return HTMLResponse(content=content)
 
     return application
 
