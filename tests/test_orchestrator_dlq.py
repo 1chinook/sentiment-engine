@@ -71,6 +71,20 @@ async def test_orchestrator_concurrency_lock_skips_overlapping_cycle(
     assert orch.is_running is False
 
 
+def _install_sleep_recorder(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Intercept asyncio.sleep and record non-zero backoff delays."""
+    recorded_sleeps: list[float] = []
+    real_sleep = asyncio.sleep
+
+    async def _mock_sleep(delay: float) -> None:
+        if delay > 0:
+            recorded_sleeps.append(delay)
+        await real_sleep(0)
+
+    monkeypatch.setattr("app.services.orchestrator.asyncio.sleep", _mock_sleep)
+    return recorded_sleeps
+
+
 @pytest.mark.asyncio
 async def test_orchestrator_exponential_backoff_succeeds_after_two_failures(
     orchestrator: PipelineOrchestrator,
@@ -79,15 +93,7 @@ async def test_orchestrator_exponential_backoff_succeeds_after_two_failures(
     """Transient failures trigger 1s, 2s backoff delays before succeeding on attempt 3."""
     assert isinstance(orchestrator.ingestor, MockStreamIngestor)
     orchestrator.ingestor.inject_transient_failures(2)
-
-    recorded_sleeps: list[float] = []
-    real_sleep = asyncio.sleep
-
-    async def _mock_sleep(delay: float) -> None:
-        recorded_sleeps.append(delay)
-        await real_sleep(0)
-
-    monkeypatch.setattr("app.services.orchestrator.asyncio.sleep", _mock_sleep)
+    recorded_sleeps = _install_sleep_recorder(monkeypatch)
 
     result = await orchestrator.run_cycle(batch_size=4)
     assert result["status"] == "completed"
@@ -103,15 +109,7 @@ async def test_orchestrator_exponential_backoff_exhaustion(
     """Exceeding max retries records full 1s, 2s, 4s exponential backoff sequence."""
     assert isinstance(orchestrator.ingestor, MockStreamIngestor)
     orchestrator.ingestor.inject_transient_failures(5)
-
-    recorded_sleeps: list[float] = []
-    real_sleep = asyncio.sleep
-
-    async def _mock_sleep(delay: float) -> None:
-        recorded_sleeps.append(delay)
-        await real_sleep(0)
-
-    monkeypatch.setattr("app.services.orchestrator.asyncio.sleep", _mock_sleep)
+    recorded_sleeps = _install_sleep_recorder(monkeypatch)
 
     result = await orchestrator.run_cycle(batch_size=4)
     assert result["status"] == "failed"
