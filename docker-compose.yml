@@ -1,0 +1,53 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: sentiment-engine-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-sentiment_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-sentiment_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  sentiment-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sentiment-engine-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      APP_NAME: sentiment-engine
+      WORK_MODE: ${WORK_MODE:-TEST_SIMULATION}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-sentiment_db}
+      NLP_MODEL_NAME: ${NLP_MODEL_NAME:-cardiffnlp/twitter-xlm-roberta-base-sentiment}
+      NLP_USE_FALLBACK_IF_UNAVAILABLE: ${NLP_USE_FALLBACK_IF_UNAVAILABLE:-true}
+      NLP_MAX_BATCH_SIZE: ${NLP_MAX_BATCH_SIZE:-64}
+      INGESTION_BATCH_SIZE: ${INGESTION_BATCH_SIZE:-20}
+      BACKOFF_BASE_DELAY_SEC: ${BACKOFF_BASE_DELAY_SEC:-1.0}
+      BACKOFF_MAX_RETRIES: ${BACKOFF_MAX_RETRIES:-3}
+      DLQ_FILE_PATH: /app/logs/failed_batches.jsonl
+      CORRUPTED_DLQ_FILE_PATH: /app/logs/corrupted_dlq.jsonl
+      SCHEDULER_INGEST_INTERVAL_SEC: ${SCHEDULER_INGEST_INTERVAL_SEC:-10}
+      SCHEDULER_DLQ_INTERVAL_SEC: ${SCHEDULER_DLQ_INTERVAL_SEC:-60}
+    volumes:
+      - ./logs:/app/logs
+      - hf_cache:/app/.cache/huggingface
+
+volumes:
+  postgres_data:
+  hf_cache:
