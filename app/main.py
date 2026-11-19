@@ -16,7 +16,8 @@ from app.api.v1.router import router as v1_router
 from app.core.config import Settings, WorkMode, get_settings
 from app.core.logging import configure_logging, get_logger
 from app.db.session import AsyncSessionLocal, dispose_db, engine, init_db
-from app.services.ingestion.mock_stream import MockStreamIngestor
+from app.services.alerts.detector import SpikeAlertDetector
+from app.services.ingestion.real_streams import build_ingestor
 from app.services.nlp.analyzer import SentimentAnalyzer
 from app.services.orchestrator import PipelineOrchestrator
 from app.workers.scheduler import BackgroundWorkerManager
@@ -60,8 +61,12 @@ def create_app(
             analyzer.load_model, force_fallback=force_fallback_nlp
         )
 
-        ingestor = MockStreamIngestor(
-            failure_rate=active_settings.MOCK_FAILURE_RATE
+        ingestor = build_ingestor(active_settings)
+        alert_detector = SpikeAlertDetector(
+            sentiment_threshold=active_settings.ALERT_SENTIMENT_THRESHOLD,
+            min_batch_size=active_settings.ALERT_MIN_BATCH_SIZE,
+            webhook_url=active_settings.ALERT_WEBHOOK_URL,
+            webhook_timeout_sec=active_settings.ALERT_WEBHOOK_TIMEOUT_SEC,
         )
         orchestrator = PipelineOrchestrator(
             ingestor=ingestor,
@@ -72,6 +77,7 @@ def create_app(
             backoff_base_delay_sec=active_settings.BACKOFF_BASE_DELAY_SEC,
             backoff_max_retries=active_settings.BACKOFF_MAX_RETRIES,
             default_batch_size=active_settings.INGESTION_BATCH_SIZE,
+            alert_detector=alert_detector,
         )
         worker_manager = BackgroundWorkerManager(
             orchestrator=orchestrator,

@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.config import WorkMode
 from app.db.models import SentimentLabel
+from app.services.alerts.detector import SpikeAlertEvent
 
 
 class AnalyzeRequest(BaseModel):
@@ -126,6 +127,34 @@ class SimulationTriggerResponse(BaseModel):
     routed_to_dlq: bool
     processing_time_ms: float = Field(ge=0.0)
     distribution: dict[str, int]
+    alerts_triggered: int = Field(default=0, ge=0)
+
+
+class WebhookRegistrationRequest(BaseModel):
+    """Request payload to register a target webhook URL for spike alerts."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = Field(..., min_length=8, max_length=512)
+
+    @model_validator(mode="after")
+    def validate_http_scheme(self) -> "WebhookRegistrationRequest":
+        cleaned = self.url.strip()
+        if not (cleaned.startswith("http://") or cleaned.startswith("https://")):
+            raise ValueError("Webhook URL must start with http:// or https://")
+        self.url = cleaned
+        return self
+
+
+class AlertsStatusResponse(BaseModel):
+    """Current spike detector configuration, webhooks, and recent alert history."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    threshold: float
+    min_batch_size: int
+    registered_webhooks: list[str]
+    recent_alerts: list[SpikeAlertEvent]
 
 
 class DLQRecoveryResponse(BaseModel):

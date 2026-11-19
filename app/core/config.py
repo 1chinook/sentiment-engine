@@ -59,6 +59,20 @@ class Settings(BaseSettings):
     SCHEDULER_INGEST_INTERVAL_SEC: int = Field(default=10, ge=1)
     SCHEDULER_DLQ_INTERVAL_SEC: int = Field(default=60, ge=1)
 
+    # Security (Optional X-API-Key authentication; disabled when None/empty)
+    API_KEY: str | None = None
+
+    # Spike / Hype Alerting & Webhook Notification (Clip Automation Integration)
+    ALERT_SENTIMENT_THRESHOLD: float = Field(default=0.45, ge=0.05, le=1.0)
+    ALERT_MIN_BATCH_SIZE: int = Field(default=5, ge=1)
+    ALERT_WEBHOOK_URL: str | None = None
+    ALERT_WEBHOOK_TIMEOUT_SEC: float = Field(default=5.0, ge=0.5, le=30.0)
+
+    # Real Data Ingestion Sources (Used in PRODUCTION mode)
+    TWITCH_CHANNEL: str | None = None
+    MARKET_RSS_URLS: str = "https://feeds.bbci.co.uk/news/business/rss.xml"
+    MOVIE_RSS_URLS: str = "https://letterboxd.com/journal/rss/"
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

@@ -41,16 +41,20 @@ class BackgroundWorkerManager:
         if self._started:
             return
 
-        if self.work_mode == WorkMode.TEST_SIMULATION:
-            self._scheduler.add_job(
-                self.orchestrator.run_cycle,
-                trigger=IntervalTrigger(seconds=self.ingest_interval_sec),
-                id="ingestion_cycle_job",
-                name="Synthetic Stream Ingestion & Sentiment Cycle",
-                replace_existing=True,
-                max_instances=1,
-                coalesce=True,
-            )
+        job_name = (
+            "Synthetic Stream Ingestion & Sentiment Cycle"
+            if self.work_mode == WorkMode.TEST_SIMULATION
+            else "Production Stream Ingestion & Sentiment Cycle"
+        )
+        self._scheduler.add_job(
+            self.orchestrator.run_cycle,
+            trigger=IntervalTrigger(seconds=self.ingest_interval_sec),
+            id="ingestion_cycle_job",
+            name=job_name,
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
 
         self._scheduler.add_job(
             self.orchestrator.recover_dlq,

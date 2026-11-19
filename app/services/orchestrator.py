@@ -19,6 +19,7 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.db.models import SentimentLabel
 from app.db.repository import SentimentRepository
+from app.services.alerts.detector import SpikeAlertDetector
 from app.services.ingestion.base import BaseIngestor, RawIngestedMessage
 from app.services.nlp.analyzer import SentimentAnalyzer, SentimentPrediction
 
@@ -99,11 +100,15 @@ class PipelineOrchestrator:
         backoff_base_delay_sec: float | None = None,
         backoff_max_retries: int | None = None,
         default_batch_size: int | None = None,
+        alert_detector: SpikeAlertDetector | None = None,
     ) -> None:
         settings = get_settings()
         self.ingestor = ingestor
         self.nlp_service = nlp_service
         self.session_factory = session_factory
+        self.alert_detector: SpikeAlertDetector = (
+            alert_detector or SpikeAlertDetector()
+        )
 
         self.dlq_file_path: Path = Path(
             dlq_file_path or settings.DLQ_FILE_PATH
@@ -313,6 +318,7 @@ class PipelineOrchestrator:
                 persisted, routed_to_dlq, db_error = (
                     await self._persist_with_dlq_fallback(records)
                 )
+                alerts = await self.alert_detector.evaluate_batch(records)
 
                 total_ms = round((time.perf_counter() - started) * 1000.0, 3)
                 self._last_cycle_at = datetime.now(timezone.utc)
@@ -329,6 +335,7 @@ class PipelineOrchestrator:
                         "nlp_ms": nlp_ms,
                         "total_ms": total_ms,
                         "routed_to_dlq": routed_to_dlq,
+                        "alerts_triggered": len(alerts),
                     },
                 )
                 return {
@@ -337,6 +344,7 @@ class PipelineOrchestrator:
                     "persisted_to_db": persisted,
                     "routed_to_dlq": routed_to_dlq,
                     "processing_time_ms": total_ms,
+                    "alerts_triggered": len(alerts),
                     "error": db_error,
                 }
             except Exception as exc:
@@ -379,6 +387,7 @@ class PipelineOrchestrator:
         persisted, routed_to_dlq, db_error = (
             await self._persist_with_dlq_fallback(records)
         )
+        alerts = await self.alert_detector.evaluate_batch(records)
 
         counts = Counter(pred.label.value for pred in predictions)
         distribution = {
@@ -397,6 +406,7 @@ class PipelineOrchestrator:
             "routed_to_dlq": routed_to_dlq,
             "processing_time_ms": total_ms,
             "distribution": distribution,
+            "alerts_triggered": len(alerts),
             "error": db_error,
         }
 

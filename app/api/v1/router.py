@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.v1.schemas import (
+    AlertsStatusResponse,
     AnalyzedItemResponse,
     AnalyzeRequest,
     AnalyzeResponse,
@@ -17,8 +18,10 @@ from app.api.v1.schemas import (
     SimulationTriggerRequest,
     SimulationTriggerResponse,
     TopicSentimentResponse,
+    WebhookRegistrationRequest,
 )
 from app.core.config import Settings, get_settings
+from app.core.security import verify_api_key
 from app.db.repository import SentimentRepository
 from app.db.session import AsyncSessionLocal, check_db_health
 from app.services.nlp.analyzer import SentimentAnalyzer
@@ -75,6 +78,7 @@ def get_app_settings(request: Request) -> Settings:
 @router.post(
     "/analyze",
     response_model=AnalyzeResponse,
+    dependencies=[Depends(verify_api_key)],
     summary="Analyze single or batch texts in real time",
 )
 async def analyze_texts(
@@ -148,6 +152,7 @@ async def get_topic_sentiment(
 @router.post(
     "/simulation/trigger",
     response_model=SimulationTriggerResponse,
+    dependencies=[Depends(verify_api_key)],
     summary="Trigger an immediate biased synthetic sentiment spike",
 )
 async def trigger_simulation_spike(
@@ -166,6 +171,7 @@ async def trigger_simulation_spike(
 @router.post(
     "/orchestrator/recover-dlq",
     response_model=DLQRecoveryResponse,
+    dependencies=[Depends(verify_api_key)],
     summary="Manually trigger Dead Letter Queue recovery",
 )
 async def recover_dlq_endpoint(
@@ -174,6 +180,45 @@ async def recover_dlq_endpoint(
     """Replay failed JSONL batches back into PostgreSQL."""
     result = await orchestrator.recover_dlq()
     return DLQRecoveryResponse(**result)
+
+
+@router.get(
+    "/alerts",
+    response_model=AlertsStatusResponse,
+    summary="Get recent sentiment spike alerts and registered webhook targets",
+)
+async def get_spike_alerts(
+    orchestrator: PipelineOrchestrator = Depends(get_orchestrator),
+) -> AlertsStatusResponse:
+    """Return recent hype/backlash spike alerts for clip automation & monitoring."""
+    detector = orchestrator.alert_detector
+    return AlertsStatusResponse(
+        threshold=detector.sentiment_threshold,
+        min_batch_size=detector.min_batch_size,
+        registered_webhooks=detector.webhook_urls,
+        recent_alerts=detector.get_recent_alerts(limit=25),
+    )
+
+
+@router.post(
+    "/alerts/webhooks",
+    response_model=AlertsStatusResponse,
+    dependencies=[Depends(verify_api_key)],
+    summary="Register a webhook URL to receive automatic sentiment spike callbacks",
+)
+async def register_spike_webhook(
+    payload: WebhookRegistrationRequest,
+    orchestrator: PipelineOrchestrator = Depends(get_orchestrator),
+) -> AlertsStatusResponse:
+    """Register an HTTP endpoint (e.g. clip automation service) for spike alerts."""
+    detector = orchestrator.alert_detector
+    detector.register_webhook(payload.url)
+    return AlertsStatusResponse(
+        threshold=detector.sentiment_threshold,
+        min_batch_size=detector.min_batch_size,
+        registered_webhooks=detector.webhook_urls,
+        recent_alerts=detector.get_recent_alerts(limit=25),
+    )
 
 
 @router.get(

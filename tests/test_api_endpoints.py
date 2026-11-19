@@ -10,6 +10,14 @@ from pathlib import Path
 import httpx
 import pytest
 
+from app.core.config import Settings, WorkMode
+from app.services.ingestion.mock_stream import MockStreamIngestor
+from app.services.ingestion.real_streams import (
+    CompositeProductionIngestor,
+    build_ingestor,
+    parse_rss_or_atom_xml,
+)
+
 
 @pytest.mark.asyncio
 async def test_post_analyze_single_and_batch(
@@ -153,3 +161,105 @@ async def test_dashboard_endpoint(async_client: httpx.AsyncClient) -> None:
     assert resp.status_code == 200
     assert "text/html" in resp.headers.get("content-type", "")
     assert "sentiment-engine" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_spike_alerts_and_webhook_registration(
+    async_client: httpx.AsyncClient,
+) -> None:
+    """Spike bursts trigger SpikeAlertEvents and webhook registration persists."""
+    reg_resp = await async_client.post(
+        "/api/v1/alerts/webhooks",
+        json={"url": "http://localhost:9999/webhooks/clip-trigger"},
+    )
+    assert reg_resp.status_code == 200
+    reg_data = reg_resp.json()
+    assert (
+        "http://localhost:9999/webhooks/clip-trigger"
+        in reg_data["registered_webhooks"]
+    )
+
+    spike_resp = await async_client.post(
+        "/api/v1/simulation/trigger",
+        json={
+            "topic": "stream_chat",
+            "sentiment_bias": "positive",
+            "batch_size": 25,
+        },
+    )
+    assert spike_resp.status_code == 200
+    assert spike_resp.json()["alerts_triggered"] >= 1
+
+    alerts_resp = await async_client.get("/api/v1/alerts")
+    assert alerts_resp.status_code == 200
+    alerts_data = alerts_resp.json()
+    assert len(alerts_data["recent_alerts"]) >= 1
+    latest = alerts_data["recent_alerts"][0]
+    assert latest["topic"] == "stream_chat"
+    assert latest["direction"] == "positive_hype"
+
+
+@pytest.mark.asyncio
+async def test_api_key_authentication_enforcement(
+    async_client: httpx.AsyncClient,
+) -> None:
+    """When API_KEY is configured, protected endpoints enforce X-API-Key header."""
+    transport = async_client._transport  # type: ignore[attr-defined]
+    app = transport.app
+    app.state.settings.API_KEY = "test-secret-key-123"
+    try:
+        unauth_resp = await async_client.post(
+            "/api/v1/analyze",
+            json={"text": "Harika yayın!"},
+        )
+        assert unauth_resp.status_code == 401
+
+        auth_resp = await async_client.post(
+            "/api/v1/analyze",
+            headers={"X-API-Key": "test-secret-key-123"},
+            json={"text": "Harika yayın!"},
+        )
+        assert auth_resp.status_code == 200
+    finally:
+        app.state.settings.API_KEY = None
+
+
+def test_parse_rss_and_atom_xml_and_production_factory() -> None:
+    """RSS 2.0 and Atom XML payloads parse into RawIngestedMessage items."""
+    rss_xml = """<?xml version="1.0" encoding="UTF-8"?>
+    <rss version="2.0">
+      <channel>
+        <item>
+          <title>Tech stocks rally to record high</title>
+          <description>&lt;p&gt;Strong institutional buying continues.&lt;/p&gt;</description>
+          <link>https://example.com/market/1</link>
+        </item>
+      </channel>
+    </rss>"""
+    rss_msgs = parse_rss_or_atom_xml(
+        rss_xml, topic="market_pulse", source_url="https://example.com/rss"
+    )
+    assert len(rss_msgs) == 1
+    assert rss_msgs[0].topic == "market_pulse"
+    assert "Tech stocks rally to record high" in rss_msgs[0].text
+    assert "<p>" not in rss_msgs[0].text
+
+    atom_xml = """<?xml version="1.0" encoding="utf-8"?>
+    <feed xmlns="http://www.w3.org/2005/Atom">
+      <entry>
+        <title>Masterpiece sci-fi film review</title>
+        <summary>Phenomenal cinematography and score.</summary>
+        <link href="https://example.com/movies/1"/>
+      </entry>
+    </feed>"""
+    atom_msgs = parse_rss_or_atom_xml(
+        atom_xml, topic="movie_reviews", source_url="https://example.com/atom"
+    )
+    assert len(atom_msgs) == 1
+    assert atom_msgs[0].topic == "movie_reviews"
+    assert "Masterpiece sci-fi film review" in atom_msgs[0].text
+
+    sim_ingestor = build_ingestor(Settings(WORK_MODE=WorkMode.TEST_SIMULATION))
+    prod_ingestor = build_ingestor(Settings(WORK_MODE=WorkMode.PRODUCTION))
+    assert isinstance(sim_ingestor, MockStreamIngestor)
+    assert isinstance(prod_ingestor, CompositeProductionIngestor)
