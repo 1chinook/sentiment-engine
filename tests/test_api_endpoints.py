@@ -11,10 +11,13 @@ import httpx
 import pytest
 
 from app.core.config import Settings, WorkMode
+from app.services.ingestion.base import RawIngestedMessage
 from app.services.ingestion.mock_stream import MockStreamIngestor
 from app.services.ingestion.real_streams import (
     CompositeProductionIngestor,
+    TwitchAnonymousIRCIngestor,
     build_ingestor,
+    normalize_twitch_channel,
     parse_rss_or_atom_xml,
 )
 
@@ -263,3 +266,54 @@ def test_parse_rss_and_atom_xml_and_production_factory() -> None:
     prod_ingestor = build_ingestor(Settings(WORK_MODE=WorkMode.PRODUCTION))
     assert isinstance(sim_ingestor, MockStreamIngestor)
     assert isinstance(prod_ingestor, CompositeProductionIngestor)
+    assert normalize_twitch_channel("https://www.twitch.tv/Elraenn/chat") == "elraenn"
+
+
+@pytest.mark.asyncio
+async def test_live_twitch_chat_endpoint(
+    async_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """POST /api/v1/live/twitch normalizes channel, analyzes IRC messages, and persists."""
+
+    async def _fake_fetch_batch(
+        self: TwitchAnonymousIRCIngestor, batch_size: int = 20
+    ) -> list[RawIngestedMessage]:
+        return [
+            RawIngestedMessage(
+                topic="stream_chat",
+                source=f"twitch:{self.channel}",
+                text="POGGERS efsane klip harika oynadın!! 🔥",
+                metadata={"channel": self.channel, "username": "izleyici_1"},
+            ),
+            RawIngestedMessage(
+                topic="stream_chat",
+                source=f"twitch:{self.channel}",
+                text="Lag var yayında ses kayıyor rezalet 😡",
+                metadata={"channel": self.channel, "username": "izleyici_2"},
+            ),
+        ]
+
+    monkeypatch.setattr(
+        TwitchAnonymousIRCIngestor, "fetch_batch", _fake_fetch_batch
+    )
+
+    resp = await async_client.post(
+        "/api/v1/live/twitch",
+        json={
+            "channel": "https://twitch.tv/Elraenn",
+            "listen_seconds": 2.0,
+            "max_messages": 10,
+            "persist": True,
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["channel"] == "elraenn"
+    assert data["fetched_count"] == 2
+    assert data["persisted"] is True
+    assert len(data["messages"]) == 2
+    assert data["messages"][0]["username"] == "izleyici_1"
+    assert data["messages"][0]["sentiment_label"] == "positive"
+    assert data["messages"][1]["username"] == "izleyici_2"
+    assert data["messages"][1]["sentiment_label"] == "negative"

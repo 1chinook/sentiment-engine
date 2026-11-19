@@ -157,6 +157,45 @@ class AlertsStatusResponse(BaseModel):
     recent_alerts: list[SpikeAlertEvent]
 
 
+class TwitchLiveRequest(BaseModel):
+    """Request payload to sample and analyze a live Twitch streamer's chat."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    channel: str = Field(..., min_length=1, max_length=128)
+    listen_seconds: float = Field(default=4.0, ge=1.0, le=12.0)
+    max_messages: int = Field(default=25, ge=1, le=100)
+    persist: bool = True
+
+
+class TwitchChatMessageItem(BaseModel):
+    """Single analyzed live Twitch chat message with author username."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    username: str
+    text: str
+    sentiment_label: SentimentLabel
+    confidence_score: float = Field(ge=0.0, le=1.0)
+    sentiment_score: float = Field(ge=-1.0, le=1.0)
+    processing_time_ms: float = Field(ge=0.0)
+
+
+class TwitchLiveResponse(BaseModel):
+    """Batch sentiment analysis summary for a live Twitch chat sample."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    channel: str
+    fetched_count: int = Field(ge=0)
+    avg_sentiment_score: float
+    distribution: dict[str, int]
+    total_processing_time_ms: float = Field(ge=0.0)
+    persisted: bool
+    alerts_triggered: int = Field(default=0, ge=0)
+    messages: list[TwitchChatMessageItem]
+
+
 class DLQRecoveryResponse(BaseModel):
     """Outcome of a manual or scheduled Dead Letter Queue recovery run."""
 

@@ -420,6 +420,54 @@ Piyasalar Fed faiz kararı öncesi yatay seyrediyor.</textarea>
         </div>
       </section>
     </div>
+
+    <!-- Live Twitch Chat IRC Section -->
+    <section class="card" style="margin-top: 20px; border-color: #7c3aed;">
+      <div class="card-header">
+        <div>
+          <div class="card-title" style="display:flex; align-items:center; gap:8px;">
+            <span style="color:#a78bfa;">🟣 Canlı Twitch Kanalı Çek & Analiz Et</span>
+            <span class="badge neutral" style="background:rgba(124,58,237,0.2); color:#c4b5fd; border-color:#7c3aed;">Gerçek Zamanlı IRC (Anonim)</span>
+          </div>
+          <div class="card-subtitle"><code>POST /api/v1/live/twitch</code> — Şu an yayında olan herhangi bir Twitch yayıncısının kullanıcı adını veya kanal linkini girin</div>
+        </div>
+        <div class="preset-chips">
+          <button class="chip" onclick="setTwitchChannel('elraenn')">elraenn</button>
+          <button class="chip" onclick="setTwitchChannel('wtcn')">wtcn</button>
+          <button class="chip" onclick="setTwitchChannel('kaicenat')">kaicenat</button>
+          <button class="chip" onclick="setTwitchChannel('xqc')">xqc</button>
+          <button class="chip" onclick="setTwitchChannel('ibai')">ibai</button>
+          <button class="chip" onclick="setTwitchChannel('eslcs')">eslcs</button>
+        </div>
+      </div>
+
+      <div class="controls-row" style="flex-wrap:wrap;">
+        <div style="display:flex; gap:10px; align-items:center; flex:1; min-width:260px; flex-wrap:wrap;">
+          <input
+            type="text"
+            id="twitch-channel"
+            value="xqc"
+            placeholder="Twitch kanal adı veya linki (örn: elraenn veya twitch.tv/elraenn)"
+            style="flex:1; min-width:200px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:14px;"
+          />
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span style="font-size:12px; color:var(--muted);">Dinleme (sn):</span>
+            <input type="number" id="twitch-seconds" value="4" min="1" max="12" style="width:68px; padding:9px;" />
+          </div>
+          <label style="font-size:13px; color:var(--muted); display:flex; align-items:center; gap:6px; cursor:pointer;">
+            <input type="checkbox" id="twitch-auto-loop" onchange="toggleTwitchLoop()" /> 🔄 Sürekli Canlı Dinle
+          </label>
+        </div>
+        <button class="btn btn-primary" id="btn-twitch" style="background:#7c3aed;" onclick="pullLiveTwitchChat()">
+          🔴 Canlı Sohbeti Çek & Analiz Et
+        </button>
+      </div>
+
+      <div id="twitch-status" class="card-subtitle">
+        Yayında olan bir kanal adı girip butona bastığınızda Twitch IRC sunucusuna bağlanılır ve o an akan sohbet mesajları analiz edilir.
+      </div>
+      <div id="twitch-results" class="results-list" style="max-height: 340px;"></div>
+    </section>
   </div>
 
   <script>
@@ -661,6 +709,106 @@ Piyasalar Fed faiz kararı öncesi yatay seyrediyor.</textarea>
       const data = await res.json();
       alert(`DLQ Kurtarma Durumu: ${data.status}\nKurtarılan: ${data.recovered_count}\nBozuk İzole: ${data.corrupted_count}`);
       refreshAll();
+    }
+
+    let twitchLoopTimer = null;
+    let twitchBusy = false;
+
+    function setTwitchChannel(ch) {
+      document.getElementById('twitch-channel').value = ch;
+      pullLiveTwitchChat();
+    }
+
+    function toggleTwitchLoop() {
+      const enabled = document.getElementById('twitch-auto-loop').checked;
+      if (twitchLoopTimer) {
+        clearInterval(twitchLoopTimer);
+        twitchLoopTimer = null;
+      }
+      if (enabled) {
+        pullLiveTwitchChat();
+        twitchLoopTimer = setInterval(() => {
+          if (!twitchBusy) pullLiveTwitchChat();
+        }, 6000);
+      }
+    }
+
+    async function pullLiveTwitchChat() {
+      const channelInput = document.getElementById('twitch-channel').value.trim();
+      if (!channelInput || twitchBusy) return;
+
+      const listenSeconds = parseFloat(document.getElementById('twitch-seconds').value || '4');
+      const btn = document.getElementById('btn-twitch');
+      const statusEl = document.getElementById('twitch-status');
+      const resultsEl = document.getElementById('twitch-results');
+
+      twitchBusy = true;
+      btn.disabled = true;
+      btn.textContent = `⏳ #${channelInput} Sohbeti Dinleniyor (${listenSeconds}sn)...`;
+      statusEl.textContent = `irc.chat.twitch.tv üzerinden #${channelInput} kanalına bağlanıldı, canlı mesajlar toplanıyor...`;
+
+      try {
+        const res = await fetch('/api/v1/live/twitch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            channel: channelInput,
+            listen_seconds: listenSeconds,
+            max_messages: 25,
+            persist: true
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          statusEl.textContent = `Hata: ${data.detail || res.statusText}`;
+          return;
+        }
+
+        if (data.fetched_count === 0) {
+          statusEl.textContent =
+            `#${data.channel} kanalına bağlanıldı ancak son ${listenSeconds} saniyede sohbette yeni mesaj yazılmadı ` +
+            `(Yayıncı şu an çevrimdışı olabilir veya sohbet yavaş akıyor olabilir; dinleme süresini artırıp tekrar deneyebilirsiniz).`;
+          return;
+        }
+
+        const sign = data.avg_sentiment_score > 0 ? '+' : '';
+        statusEl.innerHTML =
+          `<strong style="color:#a78bfa;">#${escapeHtml(data.channel)}</strong> kanalından ` +
+          `<strong>${data.fetched_count} canlı mesaj</strong> çekildi ve ${data.total_processing_time_ms.toFixed(1)} ms içinde analiz edildi | ` +
+          `Anlık Kanal Duygu Ortalaması: <strong style="color:${scoreColor(data.avg_sentiment_score)}">${sign}${data.avg_sentiment_score.toFixed(3)}</strong> ` +
+          `(+${data.distribution.positive} Pozitif / ~${data.distribution.neutral} Nötr / -${data.distribution.negative} Negatif)`;
+
+        resultsEl.innerHTML = data.messages.map(item => {
+          const pct = Math.round(item.confidence_score * 100);
+          const pSign = item.sentiment_score > 0 ? '+' : '';
+          return `
+            <div class="result-item">
+              <div class="result-top">
+                <div class="result-text">
+                  <strong style="color:#a78bfa;">@${escapeHtml(item.username)}:</strong> ${escapeHtml(item.text)}
+                </div>
+                <span class="badge ${item.sentiment_label}">${item.sentiment_label}</span>
+              </div>
+              <div class="bar-bg">
+                <div class="bar-fill ${item.sentiment_label}" style="width:${pct}%"></div>
+              </div>
+              <div class="result-meta">
+                <span>Model Eminliği (Güven): <strong>%${pct}</strong> (${item.confidence_score.toFixed(3)})</span>
+                <span>Polarite: <strong>${pSign}${item.sentiment_score.toFixed(3)}</strong></span>
+                <span>Süre: ${item.processing_time_ms.toFixed(1)} ms</span>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        await refreshAll();
+      } catch (err) {
+        statusEl.textContent = 'Twitch bağlantı hatası: ' + err;
+      } finally {
+        twitchBusy = false;
+        btn.disabled = false;
+        btn.textContent = '🔴 Canlı Sohbeti Çek & Analiz Et';
+      }
     }
 
     function escapeHtml(str) {

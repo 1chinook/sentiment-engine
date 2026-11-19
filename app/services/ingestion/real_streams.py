@@ -198,6 +198,16 @@ class RSSFeedIngestor(BaseIngestor):
         )
 
 
+def normalize_twitch_channel(raw_channel: str) -> str:
+    """Extract clean lowercase Twitch channel login from name or twitch.tv URL."""
+    cleaned = raw_channel.strip()
+    if "twitch.tv/" in cleaned.lower():
+        cleaned = re.split(r"twitch\.tv/", cleaned, flags=re.IGNORECASE)[-1]
+    cleaned = cleaned.split("/")[0].split("?")[0]
+    cleaned = cleaned.lstrip("#@").strip().lower()
+    return re.sub(r"[^a-z0-9_]", "", cleaned)
+
+
 class TwitchAnonymousIRCIngestor(BaseIngestor):
     """Reads live Twitch chat using anonymous read-only IRC (`justinfan`)."""
 
@@ -206,9 +216,9 @@ class TwitchAnonymousIRCIngestor(BaseIngestor):
         channel: str,
         irc_host: str = "irc.chat.twitch.tv",
         irc_port: int = 6667,
-        read_window_sec: float = 2.5,
+        read_window_sec: float = 4.0,
     ) -> None:
-        self.channel = channel.lstrip("#").lower().strip()
+        self.channel = normalize_twitch_channel(channel)
         self.irc_host = irc_host
         self.irc_port = irc_port
         self.read_window_sec = read_window_sec

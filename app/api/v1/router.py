@@ -18,12 +18,20 @@ from app.api.v1.schemas import (
     SimulationTriggerRequest,
     SimulationTriggerResponse,
     TopicSentimentResponse,
+    TwitchChatMessageItem,
+    TwitchLiveRequest,
+    TwitchLiveResponse,
     WebhookRegistrationRequest,
 )
 from app.core.config import Settings, get_settings
 from app.core.security import verify_api_key
+from app.db.models import SentimentLabel
 from app.db.repository import SentimentRepository
 from app.db.session import AsyncSessionLocal, check_db_health
+from app.services.ingestion.real_streams import (
+    TwitchAnonymousIRCIngestor,
+    normalize_twitch_channel,
+)
 from app.services.nlp.analyzer import SentimentAnalyzer
 from app.services.orchestrator import PipelineOrchestrator
 from app.workers.scheduler import BackgroundWorkerManager
@@ -218,6 +226,92 @@ async def register_spike_webhook(
         min_batch_size=detector.min_batch_size,
         registered_webhooks=detector.webhook_urls,
         recent_alerts=detector.get_recent_alerts(limit=25),
+    )
+
+
+@router.post(
+    "/live/twitch",
+    response_model=TwitchLiveResponse,
+    dependencies=[Depends(verify_api_key)],
+    summary="Connect to a live Twitch channel chat via IRC and analyze messages",
+)
+async def analyze_live_twitch_chat(
+    payload: TwitchLiveRequest,
+    analyzer: SentimentAnalyzer = Depends(get_analyzer),
+    orchestrator: PipelineOrchestrator = Depends(get_orchestrator),
+) -> TwitchLiveResponse:
+    """Pull real-time chat messages from a live Twitch channel and run NLP inference."""
+    channel = normalize_twitch_channel(payload.channel)
+    if not channel:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid Twitch channel name.",
+        )
+
+    ingestor = TwitchAnonymousIRCIngestor(
+        channel=channel,
+        read_window_sec=payload.listen_seconds,
+    )
+    raw_messages = await ingestor.fetch_batch(batch_size=payload.max_messages)
+
+    empty_dist = {
+        SentimentLabel.POSITIVE.value: 0,
+        SentimentLabel.NEGATIVE.value: 0,
+        SentimentLabel.NEUTRAL.value: 0,
+    }
+    if not raw_messages:
+        return TwitchLiveResponse(
+            channel=channel,
+            fetched_count=0,
+            avg_sentiment_score=0.0,
+            distribution=empty_dist,
+            total_processing_time_ms=0.0,
+            persisted=False,
+            alerts_triggered=0,
+            messages=[],
+        )
+
+    texts = [msg.text for msg in raw_messages]
+    predictions, total_ms = await asyncio.to_thread(
+        analyzer.analyze_batch, texts
+    )
+
+    records = orchestrator._build_enriched_records(raw_messages, predictions)
+    persisted = False
+    if payload.persist:
+        persisted, _, _ = await orchestrator._persist_with_dlq_fallback(records)
+
+    alerts = await orchestrator.alert_detector.evaluate_batch(records)
+
+    dist = dict(empty_dist)
+    total_score = 0.0
+    items: list[TwitchChatMessageItem] = []
+
+    for msg, pred in zip(raw_messages, predictions, strict=True):
+        lbl = pred.label.value
+        dist[lbl] = dist.get(lbl, 0) + 1
+        total_score += pred.sentiment_score
+        items.append(
+            TwitchChatMessageItem(
+                username=str(msg.metadata.get("username", "viewer")),
+                text=pred.text,
+                sentiment_label=pred.label,
+                confidence_score=pred.confidence,
+                sentiment_score=pred.sentiment_score,
+                processing_time_ms=pred.processing_time_ms,
+            )
+        )
+
+    avg_score = round(total_score / len(items), 4)
+    return TwitchLiveResponse(
+        channel=channel,
+        fetched_count=len(items),
+        avg_sentiment_score=avg_score,
+        distribution=dist,
+        total_processing_time_ms=total_ms,
+        persisted=persisted,
+        alerts_triggered=len(alerts),
+        messages=items,
     )
 
 
