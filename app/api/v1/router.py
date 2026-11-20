@@ -13,6 +13,7 @@ from app.api.v1.schemas import (
     AnalyzedItemResponse,
     AnalyzeRequest,
     AnalyzeResponse,
+    ChatClusterItem,
     DLQRecoveryResponse,
     HealthResponse,
     SimulationTriggerRequest,
@@ -33,7 +34,10 @@ from app.services.ingestion.real_streams import (
     normalize_twitch_channel,
 )
 from app.services.nlp.analyzer import SentimentAnalyzer
-from app.services.nlp.hype_scorer import compute_stream_hype_summary
+from app.services.nlp.hype_scorer import (
+    analyze_chat_cohesion,
+    compute_stream_hype_summary,
+)
 from app.services.orchestrator import PipelineOrchestrator
 from app.workers.scheduler import BackgroundWorkerManager
 
@@ -92,12 +96,14 @@ def get_app_settings(request: Request) -> Settings:
 )
 async def analyze_texts(
     payload: AnalyzeRequest,
+    request: Request,
     analyzer: SentimentAnalyzer = Depends(get_analyzer),
     session: AsyncSession = Depends(get_db_session),
 ) -> AnalyzeResponse:
     """Classify one or many texts asynchronously without blocking the event loop."""
     texts = payload.resolved_texts()
     predictions, total_ms = await asyncio.to_thread(analyzer.analyze_batch, texts)
+    cohesion = analyze_chat_cohesion(texts)
 
     persisted = False
     if payload.persist:
@@ -127,6 +133,12 @@ async def analyze_texts(
                 detail=f"Failed to persist analyzed batch: {exc}",
             ) from exc
 
+        orchestrator: PipelineOrchestrator | None = getattr(
+            request.app.state, "orchestrator", None
+        )
+        if orchestrator is not None:
+            await orchestrator.alert_detector.evaluate_batch(records)
+
     return AnalyzeResponse(
         results=[
             AnalyzedItemResponse(
@@ -143,6 +155,19 @@ async def analyze_texts(
         batch_size=len(predictions),
         total_processing_time_ms=total_ms,
         persisted=persisted,
+        collective_sync_score=round(cohesion.cohesion_score * 100.0, 1),
+        wave_detected=cohesion.wave_detected,
+        wave_type=cohesion.wave_type,
+        chat_clusters=[
+            ChatClusterItem(
+                label=c.label,
+                match_count=c.match_count,
+                unique_users=c.unique_users,
+                cohesion_type=c.cohesion_type,
+                sample_texts=c.sample_texts,
+            )
+            for c in cohesion.clusters
+        ],
     )
 
 
@@ -307,10 +332,16 @@ async def analyze_live_twitch_chat(
             )
         )
 
+    usernames = [
+        str(msg.metadata.get("username", f"viewer_{idx}"))
+        for idx, msg in enumerate(raw_messages)
+    ]
+    cohesion = analyze_chat_cohesion(texts=texts, usernames=usernames)
     hype_summary = compute_stream_hype_summary(
         message_hype_scores=[pred.hype_score for pred in predictions],
         all_tags=[list(pred.hype_tags) for pred in predictions],
         listen_seconds=payload.listen_seconds,
+        cohesion_result=cohesion,
     )
     avg_score = round(total_score / len(items), 4)
     return TwitchLiveResponse(
@@ -321,6 +352,13 @@ async def analyze_live_twitch_chat(
         hype_level=hype_summary["hype_level"],
         clip_recommended=hype_summary["clip_recommended"],
         messages_per_sec=hype_summary["messages_per_sec"],
+        collective_sync_score=hype_summary["collective_sync_score"],
+        wave_detected=hype_summary["wave_detected"],
+        wave_type=hype_summary["wave_type"],
+        chat_clusters=[
+            ChatClusterItem(**cluster)
+            for cluster in hype_summary["chat_clusters"]
+        ],
         dominant_triggers=hype_summary["dominant_triggers"],
         distribution=dist,
         total_processing_time_ms=total_ms,

@@ -317,3 +317,75 @@ async def test_live_twitch_chat_endpoint(
     assert data["messages"][0]["sentiment_label"] == "positive"
     assert data["messages"][1]["username"] == "izleyici_2"
     assert data["messages"][1]["sentiment_label"] == "negative"
+
+
+@pytest.mark.asyncio
+async def test_collective_wave_triggers_alert_and_api_clusters(
+    async_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Repeated or related neutral messages still trigger collective_wave alert & cluster metadata."""
+    # 1. Test /api/v1/analyze batch cohesion response
+    analyze_resp = await async_client.post(
+        "/api/v1/analyze",
+        json={
+            "texts": [
+                "arkadaki şarkı ne",
+                "müzik ismi ne ya",
+                "bu şarkıyı bilen var mı",
+                "o7",
+                "o7",
+                "o7",
+            ],
+            "topic": "stream_chat",
+        },
+    )
+    assert analyze_resp.status_code == 200
+    analyze_data = analyze_resp.json()
+    assert analyze_data["wave_detected"] is True
+    assert analyze_data["wave_type"] == "combined_wave"
+    assert analyze_data["collective_sync_score"] >= 35.0
+    assert len(analyze_data["chat_clusters"]) >= 2
+
+    # 2. Test /api/v1/live/twitch firing a collective_wave alert on neutral repeated/related chat
+    async def _fake_wave_fetch(
+        self: TwitchAnonymousIRCIngestor, batch_size: int = 20
+    ) -> list[RawIngestedMessage]:
+        items = [
+            ("v1", "kedi çok tatlı"),
+            ("v2", "kediye bak ya"),
+            ("v3", "kedisi geldi"),
+            ("v4", "o7"),
+            ("v5", "o7"),
+            ("v6", "o7"),
+        ]
+        return [
+            RawIngestedMessage(
+                topic="stream_chat",
+                source=f"twitch:{self.channel}",
+                text=msg_text,
+                metadata={"channel": self.channel, "username": user},
+            )
+            for user, msg_text in items
+        ]
+
+    monkeypatch.setattr(
+        TwitchAnonymousIRCIngestor, "fetch_batch", _fake_wave_fetch
+    )
+
+    live_resp = await async_client.post(
+        "/api/v1/live/twitch",
+        json={"channel": "wtcn", "listen_seconds": 3.0, "persist": True},
+    )
+    assert live_resp.status_code == 200
+    live_data = live_resp.json()
+    assert live_data["wave_detected"] is True
+    assert live_data["collective_sync_score"] >= 45.0
+    assert live_data["alerts_triggered"] >= 1
+    assert len(live_data["chat_clusters"]) >= 1
+
+    alerts_resp = await async_client.get("/api/v1/alerts")
+    assert alerts_resp.status_code == 200
+    latest_alert = alerts_resp.json()["recent_alerts"][0]
+    assert latest_alert["direction"] == "collective_wave"
+    assert latest_alert["cohesion_score"] >= 45.0

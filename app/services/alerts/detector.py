@@ -12,24 +12,28 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.services.nlp.hype_scorer import analyze_chat_cohesion
 
 logger = get_logger(__name__)
 
 
 class SpikeAlertEvent(BaseModel):
-    """Detected sentiment burst event emitted to subscribers/webhooks."""
+    """Detected sentiment burst or collective chat wave event."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
     event_type: str = "sentiment_spike_alert"
     topic: str
-    direction: Literal["positive_hype", "negative_backlash"]
+    direction: Literal["positive_hype", "negative_backlash", "collective_wave"]
+    trigger_reason: str = "sentiment_threshold"
     avg_sentiment_score: float
+    cohesion_score: float = 0.0
     batch_size: int
     threshold: float
     dominant_label: str
     sample_texts: list[str]
+    clusters: list[dict[str, Any]] = Field(default_factory=list)
     webhook_delivered: bool = False
     triggered_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
@@ -161,26 +165,78 @@ class SpikeAlertDetector:
                 / len(group),
                 4,
             )
-            if abs(avg_score) < self.sentiment_threshold:
+
+            all_synthetic = all(
+                bool((r.get("metadata_json") or {}).get("synthetic", False))
+                for r in group
+            )
+            cohesion_clusters: list[dict[str, Any]] = []
+            cohesion_pct = 0.0
+            wave_detected = False
+            wave_type = "none"
+
+            if not all_synthetic:
+                texts = [str(r.get("raw_text", "")) for r in group]
+                raw_users = [
+                    str((r.get("metadata_json") or {}).get("username") or f"u_{idx}")
+                    for idx, r in enumerate(group)
+                ]
+                cohesion = analyze_chat_cohesion(texts=texts, usernames=raw_users)
+                cohesion_pct = round(cohesion.cohesion_score * 100.0, 1)
+                wave_detected = cohesion.wave_detected
+                wave_type = cohesion.wave_type
+                cohesion_clusters = [
+                    {
+                        "label": c.label,
+                        "match_count": c.match_count,
+                        "unique_users": c.unique_users,
+                        "cohesion_type": c.cohesion_type,
+                        "sample_texts": c.sample_texts,
+                    }
+                    for c in cohesion.clusters
+                ]
+
+            sentiment_triggered = abs(avg_score) >= self.sentiment_threshold
+            if not sentiment_triggered and not wave_detected:
                 continue
 
-            direction: Literal["positive_hype", "negative_backlash"] = (
-                "positive_hype" if avg_score > 0 else "negative_backlash"
-            )
+            direction: Literal[
+                "positive_hype", "negative_backlash", "collective_wave"
+            ]
+            if sentiment_triggered:
+                direction = (
+                    "positive_hype" if avg_score > 0 else "negative_backlash"
+                )
+                trigger_reason = (
+                    f"sentiment_and_{wave_type}"
+                    if wave_detected
+                    else "sentiment_threshold"
+                )
+            else:
+                direction = "collective_wave"
+                trigger_reason = wave_type
+
             label_counts = Counter(
                 str(r.get("sentiment_label", "neutral")) for r in group
             )
             dominant_label = label_counts.most_common(1)[0][0]
-            sample_texts = [str(r.get("raw_text", "")) for r in group[:3]]
+            sample_texts = (
+                cohesion_clusters[0]["sample_texts"]
+                if (direction == "collective_wave" and cohesion_clusters)
+                else [str(r.get("raw_text", "")) for r in group[:3]]
+            )
 
             alert = SpikeAlertEvent(
                 topic=topic,
                 direction=direction,
+                trigger_reason=trigger_reason,
                 avg_sentiment_score=avg_score,
+                cohesion_score=cohesion_pct,
                 batch_size=len(group),
                 threshold=self.sentiment_threshold,
                 dominant_label=dominant_label,
                 sample_texts=sample_texts,
+                clusters=cohesion_clusters,
             )
 
             delivered = await self._dispatch_webhooks(alert)

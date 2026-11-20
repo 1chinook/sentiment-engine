@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.db.models import SentimentLabel
 from app.services.nlp.analyzer import SentimentAnalyzer, _map_raw_label
 from app.services.nlp.hype_scorer import (
+    analyze_chat_cohesion,
     compute_stream_hype_summary,
     score_message_hype,
 )
@@ -102,3 +103,32 @@ def test_hybrid_stream_hype_scoring_and_clip_detection(
     )
     assert single.calibrated_label == SentimentLabel.POSITIVE
     assert "Kahkaha/Random" in single.hype_tags
+
+
+def test_chat_cohesion_detects_repeated_and_connected_messages() -> None:
+    """Identical lowercase emotes and thematically linked Turkish messages form waves."""
+    chat_texts = [
+        "elraen1",
+        "elraen1",
+        "elraen1",
+        "arkadaki şarkı adı ne",
+        "bu müziğin ismi ne ya",
+        "şarkıyı bilen var mı",
+        "kedi çok tatlı",
+        "kediye bak ya",
+        "kedisi geldi",
+        "selam nasılsınız",
+    ]
+    users = [f"viewer_{i}" for i in range(len(chat_texts))]
+    cohesion = analyze_chat_cohesion(chat_texts, usernames=users)
+
+    assert cohesion.wave_detected is True
+    assert cohesion.wave_type == "combined_wave"
+    assert cohesion.cohesion_score >= 0.45
+
+    cluster_types = {c.cohesion_type for c in cohesion.clusters}
+    assert "Toplu Aynı Tepki" in cluster_types
+    assert "Bağlantılı Konu Kümesi" in cluster_types
+    labels = [c.label for c in cohesion.clusters]
+    assert "elraen1" in labels
+    assert "Müzik / Şarkı" in labels or "kedi*" in labels

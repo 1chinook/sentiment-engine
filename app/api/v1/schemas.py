@@ -57,8 +57,20 @@ class AnalyzedItemResponse(BaseModel):
     hype_tags: list[str] = Field(default_factory=list)
 
 
+class ChatClusterItem(BaseModel):
+    """Detected repeated reaction or connected topic cluster across a chat batch."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    label: str
+    match_count: int = Field(ge=1)
+    unique_users: int = Field(ge=1)
+    cohesion_type: str
+    sample_texts: list[str]
+
+
 class AnalyzeResponse(BaseModel):
-    """Batch sentiment inference response."""
+    """Batch sentiment inference response with collective wave detection."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -66,6 +78,10 @@ class AnalyzeResponse(BaseModel):
     batch_size: int = Field(ge=1)
     total_processing_time_ms: float = Field(ge=0.0)
     persisted: bool
+    collective_sync_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    wave_detected: bool = False
+    wave_type: str = "none"
+    chat_clusters: list[ChatClusterItem] = Field(default_factory=list)
 
 
 class WindowAggregationSchema(BaseModel):
@@ -197,6 +213,10 @@ class TwitchLiveResponse(BaseModel):
     hype_level: Literal["calm", "warming_up", "high_hype", "clip_moment"] = "calm"
     clip_recommended: bool = False
     messages_per_sec: float = Field(default=0.0, ge=0.0)
+    collective_sync_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    wave_detected: bool = False
+    wave_type: str = "none"
+    chat_clusters: list[ChatClusterItem] = Field(default_factory=list)
     dominant_triggers: list[str] = Field(default_factory=list)
     distribution: dict[str, int]
     total_processing_time_ms: float = Field(ge=0.0)

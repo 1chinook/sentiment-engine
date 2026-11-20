@@ -327,6 +327,7 @@
 
         <div class="preset-chips">
           <button class="chip" onclick="setSample('stream')">🎮 Twitch/Kick Örneği</button>
+          <button class="chip" onclick="setSample('cohesion')">🌊 Bağlantılı Sohbet Dalgası</button>
           <button class="chip" onclick="setSample('movie')">🎬 Film Yorumu Örneği</button>
           <button class="chip" onclick="setSample('market')">📈 Piyasa Haberi Örneği</button>
           <button class="chip" onclick="setSample('mixed')">🌍 Karışık Batch (5 Cümle)</button>
@@ -352,6 +353,7 @@ Piyasalar Fed faiz kararı öncesi yatay seyrediyor.</textarea>
         </div>
 
         <div id="analyze-summary" class="card-subtitle">Sonuçlar aşağıda listelenir:</div>
+        <div id="analyze-cohesion-box" style="display:none; background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.35); border-radius:10px; padding:12px;"></div>
         <div id="analyze-results" class="results-list"></div>
       </section>
 
@@ -486,6 +488,7 @@ Piyasalar Fed faiz kararı öncesi yatay seyrediyor.</textarea>
           <div id="hype-meter-bar" style="height:100%; width:0%; border-radius:999px; background:linear-gradient(90deg, #38bdf8 0%, #f59e0b 55%, #f43f5e 100%); transition:width 0.4s ease;"></div>
         </div>
         <div id="hype-triggers" style="display:flex; gap:6px; flex-wrap:wrap; margin-top:10px;"></div>
+        <div id="twitch-cohesion-box" style="display:none; margin-top:12px; padding-top:12px; border-top:1px dashed var(--border);"></div>
       </div>
 
       <div id="twitch-results" class="results-list" style="max-height: 340px;"></div>
@@ -500,6 +503,17 @@ Piyasalar Fed faiz kararı öncesi yatay seyrediyor.</textarea>
         "POGGERS efsane klip!! 🔥",
         "Harika clutch aldın helal olsun!",
         "Lag var yayında ses kayıyor rezalet 😡"
+      ],
+      cohesion: [
+        "arkadaki şarkı adı ne",
+        "bu müziğin ismi ne ya",
+        "şarkıyı bilen var mı",
+        "elraen1",
+        "elraen1",
+        "elraen1",
+        "kedi çok tatlı",
+        "kediye bak ya",
+        "kedisi geldi"
       ],
       movie: [
         "Masterpiece! Directing and score were phenomenal ❤️",
@@ -522,9 +536,38 @@ Piyasalar Fed faiz kararı öncesi yatay seyrediyor.</textarea>
 
     function setSample(key) {
       document.getElementById('analyze-input').value = SAMPLES[key].join('\n');
-      if (key === 'stream') document.getElementById('analyze-topic').value = 'stream_chat';
+      if (key === 'stream' || key === 'cohesion') document.getElementById('analyze-topic').value = 'stream_chat';
       if (key === 'movie') document.getElementById('analyze-topic').value = 'movie_reviews';
       if (key === 'market') document.getElementById('analyze-topic').value = 'market_pulse';
+    }
+
+    function renderClustersHtml(data, titlePrefix) {
+      const clusters = data.chat_clusters || [];
+      if (!data.wave_detected && !clusters.length) return '';
+      const syncPct = (data.collective_sync_score || 0).toFixed(1);
+      const waveLabelMap = {
+        collective_echo: '🔁 Toplu Aynı Tepki Dalgası',
+        related_topic_cluster: '🔗 Bağlantılı Konu Dalgası',
+        combined_wave: '🌊 Çifte Sohbet Dalgası (Aynı + Bağlantılı)',
+        none: 'Sohbet Kümesi'
+      };
+      const header = waveLabelMap[data.wave_type] || 'Sohbet Dalgası';
+      const cards = clusters.map(c => `
+        <div style="background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-top:6px; font-size:12px;">
+          <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+            <span><strong>${escapeHtml(c.label)}</strong> <span style="color:#38bdf8;">(${escapeHtml(c.cohesion_type)})</span></span>
+            <span style="color:#fbbf24; font-weight:700;">${c.match_count} mesaj / ${c.unique_users} kişi</span>
+          </div>
+          <div style="color:var(--muted); margin-top:4px;">Örnekler: ${c.sample_texts.map(t => `"${escapeHtml(t)}"`).join(' · ')}</div>
+        </div>
+      `).join('');
+      return `
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+          <strong style="color:#38bdf8; font-size:13px;">${titlePrefix}${header}</strong>
+          <span class="badge neutral">Sohbet Senkronizasyonu: %${syncPct}</span>
+        </div>
+        ${cards}
+      `;
     }
 
     function scoreColor(score) {
@@ -668,6 +711,16 @@ Piyasalar Fed faiz kararı öncesi yatay seyrediyor.</textarea>
         document.getElementById('analyze-summary').textContent =
           `${data.batch_size} metin ${data.total_processing_time_ms.toFixed(1)} ms içinde analiz edildi ` +
           `(${data.persisted ? 'Veritabanına kaydedildi ✓' : 'Geçici analiz'})`;
+
+        const cohBox = document.getElementById('analyze-cohesion-box');
+        const cohHtml = renderClustersHtml(data, '');
+        if (cohHtml) {
+          cohBox.style.display = 'block';
+          cohBox.innerHTML = cohHtml;
+        } else {
+          cohBox.style.display = 'none';
+          cohBox.innerHTML = '';
+        }
 
         const container = document.getElementById('analyze-results');
         container.innerHTML = data.results.map(item => {
@@ -843,6 +896,16 @@ Piyasalar Fed faiz kararı öncesi yatay seyrediyor.</textarea>
           ? `<span style="font-size:12px; color:var(--muted);">Algılanan Sinyaller:</span> ` +
             triggers.map(t => `<span class="badge neutral" style="background:rgba(245,158,11,0.16); color:#fbbf24; border-color:rgba(245,158,11,0.4);">⚡ ${escapeHtml(t)}</span>`).join(' ')
           : `<span style="font-size:12px; color:var(--muted);">Standart sohbet akışı (belirgin hype sinyali yok)</span>`;
+
+        const twitchCohBox = document.getElementById('twitch-cohesion-box');
+        const twitchCohHtml = renderClustersHtml(data, 'Sohbet Dalgası Algılandı: ');
+        if (twitchCohHtml) {
+          twitchCohBox.style.display = 'block';
+          twitchCohBox.innerHTML = twitchCohHtml;
+        } else {
+          twitchCohBox.style.display = 'none';
+          twitchCohBox.innerHTML = '';
+        }
 
         resultsEl.innerHTML = data.messages.map(item => {
           const pct = Math.round(item.confidence_score * 100);
