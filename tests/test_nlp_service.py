@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from app.db.models import SentimentLabel
 from app.services.nlp.analyzer import SentimentAnalyzer, _map_raw_label
+from app.services.nlp.hype_scorer import (
+    compute_stream_hype_summary,
+    score_message_hype,
+)
 
 
 def test_sentiment_analyzer_is_singleton() -> None:
@@ -63,3 +67,38 @@ def test_health_info_reports_loaded_state(nlp_analyzer: SentimentAnalyzer) -> No
     assert info["device"] == "cpu"
     assert info["backend"] in ("huggingface_transformers", "bilingual_fallback")
     assert isinstance(info["total_analyzed"], int)
+
+
+def test_hybrid_stream_hype_scoring_and_clip_detection(
+    nlp_analyzer: SentimentAnalyzer,
+) -> None:
+    """Laughter, Twitch slang, elongation, and clip requests boost hype score and calibrate sentiment."""
+    hype_chat = [
+        "AHAHAHAHAHA asdasdasd KEKW",
+        "OOOOOHA NE YAPTIN KLİP AL!! 🔥🚀",
+        "WWWWWWWW CLUTCH GOD POGGERS",
+    ]
+    predictions, _ = nlp_analyzer.analyze_batch(hype_chat)
+    for pred in predictions:
+        assert pred.label == SentimentLabel.POSITIVE
+        assert pred.hype_score >= 0.45
+        assert len(pred.hype_tags) >= 1
+
+    summary = compute_stream_hype_summary(
+        message_hype_scores=[p.hype_score for p in predictions],
+        all_tags=[list(p.hype_tags) for p in predictions],
+        listen_seconds=1.0,
+    )
+    assert summary["hype_score"] >= 70.0
+    assert summary["clip_recommended"] is True
+    assert summary["hype_level"] in ("high_hype", "clip_moment")
+    assert "Klip İsteği" in summary["dominant_triggers"]
+
+    single = score_message_hype(
+        text="AHAHAHAHA sjsjsjsj",
+        base_label=SentimentLabel.NEUTRAL,
+        base_confidence=0.60,
+        base_sentiment_score=0.0,
+    )
+    assert single.calibrated_label == SentimentLabel.POSITIVE
+    assert "Kahkaha/Random" in single.hype_tags

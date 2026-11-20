@@ -466,6 +466,28 @@ Piyasalar Fed faiz kararı öncesi yatay seyrediyor.</textarea>
       <div id="twitch-status" class="card-subtitle">
         Yayında olan bir kanal adı girip butona bastığınızda Twitch IRC sunucusuna bağlanılır ve o an akan sohbet mesajları analiz edilir.
       </div>
+
+      <!-- Real-Time Stream Hype Meter Box -->
+      <div id="twitch-hype-box" style="display:none; background:var(--bg); border:1px solid var(--border); border-radius:12px; padding:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
+          <div>
+            <div style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em;">🔥 ANLIK YAYIN HYPE & COŞKU TERMOMETRESİ</div>
+            <div style="display:flex; align-items:baseline; gap:12px; margin-top:4px;">
+              <span id="hype-score-val" style="font-size:32px; font-weight:800; color:#f59e0b;">%0</span>
+              <span id="hype-level-badge" class="badge neutral">SAKİN SOHBET</span>
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div id="hype-clip-banner" style="font-size:14px; font-weight:700; color:var(--muted);">Klip Eşiği Bekleniyor (&ge;%70)</div>
+            <div id="hype-velocity" style="font-size:12px; color:var(--muted); margin-top:3px;">Sohbet Hızı: 0.00 mesaj/sn</div>
+          </div>
+        </div>
+        <div class="bar-bg" style="height:12px; background:#1e293b;">
+          <div id="hype-meter-bar" style="height:100%; width:0%; border-radius:999px; background:linear-gradient(90deg, #38bdf8 0%, #f59e0b 55%, #f43f5e 100%); transition:width 0.4s ease;"></div>
+        </div>
+        <div id="hype-triggers" style="display:flex; gap:6px; flex-wrap:wrap; margin-top:10px;"></div>
+      </div>
+
       <div id="twitch-results" class="results-list" style="max-height: 340px;"></div>
     </section>
   </div>
@@ -650,19 +672,27 @@ Piyasalar Fed faiz kararı öncesi yatay seyrediyor.</textarea>
         const container = document.getElementById('analyze-results');
         container.innerHTML = data.results.map(item => {
           const pct = Math.round(item.confidence_score * 100);
+          const hypePct = Math.round((item.hype_score || 0) * 100);
           const sign = item.sentiment_score > 0 ? '+' : '';
+          const tagsHtml = (item.hype_tags || []).map(t =>
+            `<span class="badge neutral" style="font-size:10px; padding:2px 7px; background:rgba(245,158,11,0.15); color:#fbbf24; border-color:rgba(245,158,11,0.4);">⚡ ${escapeHtml(t)}</span>`
+          ).join(' ');
           return `
             <div class="result-item">
               <div class="result-top">
                 <div class="result-text">${escapeHtml(item.text)}</div>
-                <span class="badge ${item.sentiment_label}">${item.sentiment_label}</span>
+                <div style="display:flex; gap:6px; align-items:center;">
+                  <span class="badge neutral" style="background:rgba(245,158,11,0.16); color:#fbbf24; border-color:rgba(245,158,11,0.4);">🔥 Hype %${hypePct}</span>
+                  <span class="badge ${item.sentiment_label}">${item.sentiment_label}</span>
+                </div>
               </div>
               <div class="bar-bg">
                 <div class="bar-fill ${item.sentiment_label}" style="width:${pct}%"></div>
               </div>
-              <div class="result-meta">
+              <div class="result-meta" style="flex-wrap:wrap; gap:8px;">
                 <span>Güven Skoru: <strong>%${pct}</strong> (${item.confidence_score.toFixed(3)})</span>
                 <span>Polarite: <strong>${sign}${item.sentiment_score.toFixed(3)}</strong></span>
+                <span>${tagsHtml}</span>
                 <span>Süre: ${item.processing_time_ms.toFixed(1)} ms</span>
               </div>
             </div>
@@ -778,23 +808,67 @@ Piyasalar Fed faiz kararı öncesi yatay seyrediyor.</textarea>
           `Anlık Kanal Duygu Ortalaması: <strong style="color:${scoreColor(data.avg_sentiment_score)}">${sign}${data.avg_sentiment_score.toFixed(3)}</strong> ` +
           `(+${data.distribution.positive} Pozitif / ~${data.distribution.neutral} Nötr / -${data.distribution.negative} Negatif)`;
 
+        // Render Live Hype Meter
+        const hypeBox = document.getElementById('twitch-hype-box');
+        hypeBox.style.display = 'block';
+        const hScore = data.hype_score || 0;
+        document.getElementById('hype-score-val').textContent = `%${hScore.toFixed(1)}`;
+        document.getElementById('hype-meter-bar').style.width = `${Math.min(100, hScore)}%`;
+        document.getElementById('hype-velocity').textContent =
+          `Sohbet Hızı: ${(data.messages_per_sec || 0).toFixed(2)} mesaj/sn (${data.fetched_count} mesaj)`;
+
+        const badgeEl = document.getElementById('hype-level-badge');
+        const clipBanner = document.getElementById('hype-clip-banner');
+        const levelLabels = {
+          calm: ['🧊 SAKİN SOHBET', 'neutral', '#38bdf8'],
+          warming_up: ['⚡ HAREKETLENİYOR', 'neutral', '#fbbf24'],
+          high_hype: ['🔥 YÜKSEK HYPE!', 'positive', '#f59e0b'],
+          clip_moment: ['🚨 PATLAMA ANI!', 'positive', '#f43f5e']
+        };
+        const [lvlText, lvlClass, lvlColor] = levelLabels[data.hype_level] || levelLabels.calm;
+        badgeEl.textContent = lvlText;
+        badgeEl.className = `badge ${lvlClass}`;
+        document.getElementById('hype-score-val').style.color = lvlColor;
+
+        if (data.clip_recommended) {
+          clipBanner.innerHTML = '🎬 <span style="color:#10b981;">KLİP ANI ALGILANDI! (CLIP IT!)</span>';
+          hypeBox.style.borderColor = '#10b981';
+        } else {
+          clipBanner.innerHTML = 'Klip Eşiği Bekleniyor (&ge;%70 Hype)';
+          hypeBox.style.borderColor = 'var(--border)';
+        }
+
+        const triggers = data.dominant_triggers || [];
+        document.getElementById('hype-triggers').innerHTML = triggers.length
+          ? `<span style="font-size:12px; color:var(--muted);">Algılanan Sinyaller:</span> ` +
+            triggers.map(t => `<span class="badge neutral" style="background:rgba(245,158,11,0.16); color:#fbbf24; border-color:rgba(245,158,11,0.4);">⚡ ${escapeHtml(t)}</span>`).join(' ')
+          : `<span style="font-size:12px; color:var(--muted);">Standart sohbet akışı (belirgin hype sinyali yok)</span>`;
+
         resultsEl.innerHTML = data.messages.map(item => {
           const pct = Math.round(item.confidence_score * 100);
+          const hypePct = Math.round((item.hype_score || 0) * 100);
           const pSign = item.sentiment_score > 0 ? '+' : '';
+          const tagsHtml = (item.hype_tags || []).map(t =>
+            `<span class="badge neutral" style="font-size:10px; padding:2px 7px; background:rgba(245,158,11,0.15); color:#fbbf24; border-color:rgba(245,158,11,0.4);">⚡ ${escapeHtml(t)}</span>`
+          ).join(' ');
           return `
             <div class="result-item">
               <div class="result-top">
                 <div class="result-text">
                   <strong style="color:#a78bfa;">@${escapeHtml(item.username)}:</strong> ${escapeHtml(item.text)}
                 </div>
-                <span class="badge ${item.sentiment_label}">${item.sentiment_label}</span>
+                <div style="display:flex; gap:6px; align-items:center;">
+                  <span class="badge neutral" style="background:rgba(245,158,11,0.16); color:#fbbf24; border-color:rgba(245,158,11,0.4);">🔥 Hype %${hypePct}</span>
+                  <span class="badge ${item.sentiment_label}">${item.sentiment_label}</span>
+                </div>
               </div>
               <div class="bar-bg">
                 <div class="bar-fill ${item.sentiment_label}" style="width:${pct}%"></div>
               </div>
-              <div class="result-meta">
+              <div class="result-meta" style="flex-wrap:wrap; gap:8px;">
                 <span>Model Eminliği (Güven): <strong>%${pct}</strong> (${item.confidence_score.toFixed(3)})</span>
                 <span>Polarite: <strong>${pSign}${item.sentiment_score.toFixed(3)}</strong></span>
+                <span>${tagsHtml}</span>
                 <span>Süre: ${item.processing_time_ms.toFixed(1)} ms</span>
               </div>
             </div>

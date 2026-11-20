@@ -33,6 +33,7 @@ from app.services.ingestion.real_streams import (
     normalize_twitch_channel,
 )
 from app.services.nlp.analyzer import SentimentAnalyzer
+from app.services.nlp.hype_scorer import compute_stream_hype_summary
 from app.services.orchestrator import PipelineOrchestrator
 from app.workers.scheduler import BackgroundWorkerManager
 
@@ -134,6 +135,8 @@ async def analyze_texts(
                 confidence_score=pred.confidence,
                 sentiment_score=pred.sentiment_score,
                 processing_time_ms=pred.processing_time_ms,
+                hype_score=pred.hype_score,
+                hype_tags=list(pred.hype_tags),
             )
             for pred in predictions
         ],
@@ -299,14 +302,26 @@ async def analyze_live_twitch_chat(
                 confidence_score=pred.confidence,
                 sentiment_score=pred.sentiment_score,
                 processing_time_ms=pred.processing_time_ms,
+                hype_score=pred.hype_score,
+                hype_tags=list(pred.hype_tags),
             )
         )
 
+    hype_summary = compute_stream_hype_summary(
+        message_hype_scores=[pred.hype_score for pred in predictions],
+        all_tags=[list(pred.hype_tags) for pred in predictions],
+        listen_seconds=payload.listen_seconds,
+    )
     avg_score = round(total_score / len(items), 4)
     return TwitchLiveResponse(
         channel=channel,
         fetched_count=len(items),
         avg_sentiment_score=avg_score,
+        hype_score=hype_summary["hype_score"],
+        hype_level=hype_summary["hype_level"],
+        clip_recommended=hype_summary["clip_recommended"],
+        messages_per_sec=hype_summary["messages_per_sec"],
+        dominant_triggers=hype_summary["dominant_triggers"],
         distribution=dist,
         total_processing_time_ms=total_ms,
         persisted=persisted,

@@ -12,6 +12,7 @@ from typing import Any
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.db.models import SentimentLabel
+from app.services.nlp.hype_scorer import score_message_hype
 
 logger = get_logger(__name__)
 
@@ -191,13 +192,15 @@ _NEGATIVE_EMOJIS = ("😡", "👎", "💔", "😭", "📉", "🤮", "💀", "�
 
 @dataclass(frozen=True, slots=True)
 class SentimentPrediction:
-    """Single text sentiment inference result."""
+    """Single text sentiment and live-stream hype inference result."""
 
     text: str
     label: SentimentLabel
     confidence: float
     sentiment_score: float
     processing_time_ms: float
+    hype_score: float = 0.0
+    hype_tags: tuple[str, ...] = ()
 
 
 def _normalize_token(token: str) -> str:
@@ -366,13 +369,22 @@ class SentimentAnalyzer:
         predictions: list[SentimentPrediction] = []
         for text, (label, confidence) in zip(texts, raw_results, strict=True):
             clamped_conf = round(max(0.0, min(1.0, float(confidence))), 4)
+            base_polarity = _signed_sentiment_score(label, clamped_conf)
+            hype_info = score_message_hype(
+                text=text,
+                base_label=label,
+                base_confidence=clamped_conf,
+                base_sentiment_score=base_polarity,
+            )
             predictions.append(
                 SentimentPrediction(
                     text=text,
-                    label=label,
-                    confidence=clamped_conf,
-                    sentiment_score=_signed_sentiment_score(label, clamped_conf),
+                    label=hype_info.calibrated_label,
+                    confidence=hype_info.calibrated_confidence,
+                    sentiment_score=hype_info.calibrated_sentiment_score,
                     processing_time_ms=per_item_ms,
+                    hype_score=hype_info.hype_score,
+                    hype_tags=tuple(hype_info.hype_tags),
                 )
             )
 

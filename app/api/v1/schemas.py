@@ -44,7 +44,7 @@ class AnalyzeRequest(BaseModel):
 
 
 class AnalyzedItemResponse(BaseModel):
-    """Per-item sentiment inference result."""
+    """Per-item sentiment and stream-hype inference result."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -53,6 +53,8 @@ class AnalyzedItemResponse(BaseModel):
     confidence_score: float = Field(ge=0.0, le=1.0)
     sentiment_score: float = Field(ge=-1.0, le=1.0)
     processing_time_ms: float = Field(ge=0.0)
+    hype_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    hype_tags: list[str] = Field(default_factory=list)
 
 
 class AnalyzeResponse(BaseModel):
@@ -169,7 +171,7 @@ class TwitchLiveRequest(BaseModel):
 
 
 class TwitchChatMessageItem(BaseModel):
-    """Single analyzed live Twitch chat message with author username."""
+    """Single analyzed live Twitch chat message with author username and hype score."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -179,16 +181,23 @@ class TwitchChatMessageItem(BaseModel):
     confidence_score: float = Field(ge=0.0, le=1.0)
     sentiment_score: float = Field(ge=-1.0, le=1.0)
     processing_time_ms: float = Field(ge=0.0)
+    hype_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    hype_tags: list[str] = Field(default_factory=list)
 
 
 class TwitchLiveResponse(BaseModel):
-    """Batch sentiment analysis summary for a live Twitch chat sample."""
+    """Batch sentiment & real-time Hype Meter summary for a live Twitch chat sample."""
 
     model_config = ConfigDict(from_attributes=True)
 
     channel: str
     fetched_count: int = Field(ge=0)
     avg_sentiment_score: float
+    hype_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    hype_level: Literal["calm", "warming_up", "high_hype", "clip_moment"] = "calm"
+    clip_recommended: bool = False
+    messages_per_sec: float = Field(default=0.0, ge=0.0)
+    dominant_triggers: list[str] = Field(default_factory=list)
     distribution: dict[str, int]
     total_processing_time_ms: float = Field(ge=0.0)
     persisted: bool
