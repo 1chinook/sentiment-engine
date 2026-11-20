@@ -5,12 +5,17 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import sys
 from pathlib import Path
 
 from sqlalchemy import select
 
-from app.db.models import SentimentRecord
-from app.db.session import AsyncSessionLocal
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.db.models import SentimentLabel, SentimentRecord
+from app.db.session import AsyncSessionLocal, dispose_db
 from app.services.nlp.hype_scorer import score_message_hype
 
 
@@ -27,9 +32,12 @@ async def export_dataset(
         stmt = stmt.where(SentimentRecord.topic == topic)
     stmt = stmt.order_by(SentimentRecord.created_at.desc())
 
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(stmt)
-        rows = result.scalars().all()
+    try:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
+    finally:
+        await dispose_db()
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     label_to_id = {"negative": 0, "neutral": 1, "positive": 2}
@@ -39,7 +47,7 @@ async def export_dataset(
         for row in rows:
             hype = score_message_hype(
                 text=row.raw_text,
-                base_label=row.sentiment_label,  # type: ignore[arg-type]
+                base_label=SentimentLabel(row.sentiment_label),
                 base_confidence=row.confidence_score,
                 base_sentiment_score=row.sentiment_score,
             )
