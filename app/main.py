@@ -9,6 +9,7 @@ from pathlib import Path
 
 import aiofiles
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -94,18 +95,25 @@ def create_app(
         application.state.orchestrator = orchestrator
         application.state.worker_manager = worker_manager
 
-        if (
-            active_settings.WORK_MODE == WorkMode.TEST_SIMULATION
-            and run_initial_seed
-        ):
-            await orchestrator.run_cycle()
+        if active_settings.ENABLE_BACKGROUND_SCHEDULER:
+            if (
+                active_settings.WORK_MODE == WorkMode.TEST_SIMULATION
+                and run_initial_seed
+            ):
+                await orchestrator.run_cycle()
 
-        worker_manager.start()
+            worker_manager.start()
+        else:
+            logger.info(
+                "Background scheduler disabled (ENABLE_BACKGROUND_SCHEDULER=false); "
+                "serving on-demand API requests only."
+            )
 
         try:
             yield
         finally:
-            worker_manager.shutdown()
+            if active_settings.ENABLE_BACKGROUND_SCHEDULER:
+                worker_manager.shutdown()
             if owns_engine:
                 await dispose_db(active_engine)
             logger.info("sentiment-engine microservice shutdown complete")
@@ -119,6 +127,19 @@ def create_app(
         version=active_settings.APP_VERSION,
         lifespan=lifespan,
     )
+    cors_origins = [
+        origin.strip()
+        for origin in active_settings.CORS_ALLOW_ORIGINS.split(",")
+        if origin.strip()
+    ]
+    if cors_origins:
+        application.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
     application.include_router(v1_router)
 
     @application.get("/", tags=["meta"])

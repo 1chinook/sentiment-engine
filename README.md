@@ -45,9 +45,9 @@ Tek komutla **PostgreSQL 16** ve **`sentiment-engine`** servisini ayağa kaldır
 docker compose up --build -d
 ```
 
-- **Canlı Görsel Kontrol Paneli (Web Dashboard):** http://localhost:8000/dashboard
-- **Swagger UI (OpenAPI Dokümantasyonu):** http://localhost:8000/docs
-- **Sistem Sağlık Kontrolü:** http://localhost:8000/api/v1/health
+- **Canlı Görsel Kontrol Paneli (Web Dashboard):** http://localhost:8001/dashboard
+- **Swagger UI (OpenAPI Dokümantasyonu):** http://localhost:8001/docs
+- **Sistem Sağlık Kontrolü:** http://localhost:8001/api/v1/health
 
 ---
 
@@ -73,7 +73,7 @@ Klip otomasyon servisinizin, sohbette ani bir **pozitif hype** veya **negatif te
 ```python
 import httpx
 
-SENTIMENT_ENGINE_URL = "http://localhost:8000"
+SENTIMENT_ENGINE_URL = "http://localhost:8001"
 
 async def setup_clip_webhook():
     async with httpx.AsyncClient(base_url=SENTIMENT_ENGINE_URL) as client:
@@ -95,7 +95,7 @@ async def setup_clip_webhook():
 import httpx
 
 async def analyze_movie_reviews(reviews: list[str]):
-    async with httpx.AsyncClient(base_url="http://localhost:8000") as client:
+    async with httpx.AsyncClient(base_url="http://localhost:8001") as client:
         resp = await client.post(
             "/api/v1/analyze",
             json={
@@ -113,7 +113,7 @@ async def analyze_movie_reviews(reviews: list[str]):
 import httpx
 
 async def get_market_sentiment_signal():
-    async with httpx.AsyncClient(base_url="http://localhost:8000") as client:
+    async with httpx.AsyncClient(base_url="http://localhost:8001") as client:
         resp = await client.get("/api/v1/sentiment/market_pulse")
         data = resp.json()
         return {
@@ -140,5 +140,5 @@ async def get_market_sentiment_signal():
 docker compose exec sentiment-engine pytest
 
 # Yüksek Hacimli Eşzamanlı Stres ve DB Tutarlılık Testi
-docker compose exec sentiment-engine python scripts/simulate_load.py --base-url http://localhost:8000
+docker compose exec sentiment-engine python scripts/simulate_load.py --base-url http://localhost:8001
 ```

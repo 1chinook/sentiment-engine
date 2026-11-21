@@ -104,6 +104,7 @@ async def async_client(
         DATABASE_URL=str(test_db_engine.url),
         DLQ_FILE_PATH=dlq_path,
         CORRUPTED_DLQ_FILE_PATH=corrupted_path,
+        ENABLE_BACKGROUND_SCHEDULER=True,
         SCHEDULER_INGEST_INTERVAL_SEC=3600,
         SCHEDULER_DLQ_INTERVAL_SEC=3600,
         INGESTION_BATCH_SIZE=10,

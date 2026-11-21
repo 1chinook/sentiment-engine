@@ -135,9 +135,55 @@ _SEMANTIC_CONCEPT_GROUPS: dict[str, tuple[str, ...]] = {
 
 # Turkish & international laughter / keyboard-smash patterns in live chat
 _LAUGHTER_RE = re.compile(
-    r"(?:a*ha+h[ah]*|e*he+h[eh]*|asdasd[asd]*|sjsjsj[sj]*|ksksks[ks]*|"
-    r"jsjsjs[js]*|qwqw[qw]*|lmao+|lmfao+|rofl+|kekw+|omegalul+|lulw*)",
+    r"(?:a*ha+h[ah]*|e*he+h[eh]*|pu+ha+h[ah]*|mu+ha+h[ah]*|bu+ha+h[ah]*|"
+    r"asdasd[asd]*|sjsjsj[sj]*|ksksks[ks]*|kdkdkd[kd]*|qweqwe[qwe]*|"
+    r"jsjsjs[js]*|qwqw[qw]*|sdfg[sdfg]*|asdf[asdf]*|"
+    r"lmao+|lmfao+|rofl+|kekw+|omegalul+|lulw*)",
     re.IGNORECASE,
+)
+
+# Routine non-clip chat noise: bot commands, greetings, intros/outros, giveaways, sub/raid spam, poll votes
+_BOT_CMD_RE = re.compile(r"^\s*![a-zA-Z0-9çğıöşüÇĞİÖŞÜ_-]+")
+_ROUTINE_NOISE_RE = re.compile(
+    r"^(?:"
+    r"s\.?a\.?|a\.?s\.?|selam(?:lar)?|merhaba|mrb|h\.?g\.?|ho[şs]\s*geldin(?:iz)?|ho[şs]\s*bulduk|"
+    r"iyi\s+yay[ıi]nlar|g[üu]nayd[ıi]n|iyi\s+geceler|iyi\s+ak[şs]amlar|g[öo]r[üu][şs][üu]r[üu]z|"
+    r"bay\s*bay|bye+|elveda|gg+s?|wp|w\s*stream|yay[ıi]n\s+a[çc][ıi]ld[ıi]|"
+    r"sub|subs|resub|prime|gifted|gift\s*sub|abone(?:\s+oldum)?|raid|raiders|hype\s*train|"
+    r"evet|hay[ıi]r|yes|no|olur|olmaz|kat[ıi]l|\+1|[1-5]|[a-dA-D]"
+    r")[\s!.?]*$",
+    re.IGNORECASE,
+)
+
+
+def is_routine_chat_noise(text: str) -> bool:
+    """Return True for routine stream noise (greetings, polls, giveaways, bot commands, sub/GG spam)."""
+    stripped = (text or "").strip()
+    if not stripped:
+        return True
+    if _BOT_CMD_RE.match(stripped):
+        return True
+    return bool(_ROUTINE_NOISE_RE.match(stripped))
+
+
+_COMEDY_REACTION_TOKENS = frozenset(
+    {
+        "patladim",
+        "yarildim",
+        "koptum",
+        "oldum",
+        "agliyorum",
+        "cildirdim",
+        "gulmekten",
+        "komik",
+        "zort",
+        "imdat",
+        "saka",
+        "hahaha",
+        "puhaha",
+        "muhaha",
+        "kahkaha",
+    }
 )
 
 # Character elongation (e.g. "OOOOOHA", "GOOOOOL", "WWWWWW", "AAAAA")
@@ -165,9 +211,7 @@ _POSITIVE_HYPE_TOKENS = frozenset(
         "goat",
         "goated",
         "ez",
-        "gg",
         "ggwp",
-        "wp",
         "w",
         "ww",
         "www",
@@ -220,14 +264,15 @@ _DRAMATIC_FAIL_HYPE_TOKENS = frozenset(
 )
 
 _HYPE_EMOJIS = (
+    "😂",
+    "🤣",
+    "😭",
+    "💀",
     "🔥",
     "🚀",
     "🤯",
     "😱",
     "👑",
-    "💀",
-    "😂",
-    "🤣",
     "👏",
     "⚡",
     "💥",
@@ -265,6 +310,15 @@ def score_message_hype(
             hype_tags=[],
         )
 
+    if is_routine_chat_noise(stripped):
+        return MessageHypeAnalysis(
+            calibrated_label=SentimentLabel.NEUTRAL,
+            calibrated_confidence=base_confidence,
+            calibrated_sentiment_score=0.0,
+            hype_score=0.0,
+            hype_tags=["Gürültü/Rutin"],
+        )
+
     hype_points = 0.0
     pos_hype_signal = 0.0
     neg_hype_signal = 0.0
@@ -281,10 +335,12 @@ def score_message_hype(
         pos_hype_signal += 0.50
         tags.append("Klip İsteği")
 
-    # 2. Laughter / Turkish random ("ahahaha", "asdasd", "kekw", "sjsjsj")
+    # 2. Laughter / Turkish random & comedy reactions ("ahahaha", "puhaha", "patladım", "kekw", "sjsjsj")
     laughter_hits = _LAUGHTER_RE.findall(stripped)
-    if laughter_hits:
-        laugh_boost = min(0.65, 0.45 + 0.10 * (len(laughter_hits) - 1))
+    folded_tokens = [t.translate(_TR_FOLD_MAP) for t in tokens]
+    comedy_hits = sum(1 for t in folded_tokens if t in _COMEDY_REACTION_TOKENS)
+    if laughter_hits or comedy_hits > 0:
+        laugh_boost = min(0.75, 0.50 + 0.12 * max(0, len(laughter_hits) + comedy_hits - 1))
         hype_points += laugh_boost
         pos_hype_signal += laugh_boost
         tags.append("Kahkaha/Random")
@@ -441,9 +497,11 @@ def analyze_chat_cohesion(
         else [f"msg_{i}" for i in range(total)]
     )
 
-    # 1. Exact/normalized echo detection (same phrase, emote, or number spam)
+    # 1. Exact/normalized echo detection (skip routine greetings, polls, bot commands)
     echo_buckets: dict[str, list[int]] = defaultdict(list)
     for idx, text in enumerate(texts):
+        if is_routine_chat_noise(text):
+            continue
         norm = _normalize_for_echo(text)
         if norm:
             echo_buckets[norm].append(idx)
@@ -479,6 +537,8 @@ def analyze_chat_cohesion(
     # 2. Related / connected topic clustering via Turkish stems & concept bridges
     key_buckets: dict[str, list[int]] = defaultdict(list)
     for idx, text in enumerate(texts):
+        if is_routine_chat_noise(text):
+            continue
         for key in _extract_semantic_keys(text):
             key_buckets[key].append(idx)
 

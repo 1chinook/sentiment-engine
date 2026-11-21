@@ -259,7 +259,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run async load, latency, accuracy, and DB consistency tests."
     )
-    parser.add_argument("--base-url", default="http://localhost:8000")
+    parser.add_argument("--base-url", default="http://localhost:8001")
     parser.add_argument("--concurrency", type=int, default=16)
     parser.add_argument("--requests", type=int, default=80)
     parser.add_argument("--batch-size", type=int, default=13)

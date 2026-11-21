@@ -30,6 +30,16 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     WORK_MODE: WorkMode = WorkMode.TEST_SIMULATION
     LOG_LEVEL: str = "INFO"
+    PORT: int = Field(default=8001, ge=1, le=65535)
+    CORS_ALLOW_ORIGINS: str = (
+        "http://localhost:3001,http://127.0.0.1:3001,"
+        "http://localhost:3002,http://127.0.0.1:3002,"
+        "http://localhost:3003,http://127.0.0.1:3003,"
+        "http://127.0.0.1:4173,http://localhost:4173,"
+        "http://127.0.0.1:4187,http://localhost:4187,"
+        "http://localhost:8001,http://127.0.0.1:8001,"
+        "http://127.0.0.1:8002,http://localhost:8002"
+    )
 
     # Database (Async SQLAlchemy)
     DATABASE_URL: str = (
@@ -56,6 +66,7 @@ class Settings(BaseSettings):
     CORRUPTED_DLQ_FILE_PATH: Path = Path("logs/corrupted_dlq.jsonl")
 
     # Background APScheduler Intervals
+    ENABLE_BACKGROUND_SCHEDULER: bool = True
     SCHEDULER_INGEST_INTERVAL_SEC: int = Field(default=10, ge=1)
     SCHEDULER_DLQ_INTERVAL_SEC: int = Field(default=60, ge=1)
 
