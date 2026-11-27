@@ -1,6 +1,63 @@
-# sentiment-engine
+# Sentiment Engine
 
-Canlı yayın klip otomasyonu (`stream_chat`), film analiz araçları (`movie_reviews`) ve piyasa tahmin sistemleri (`market_pulse`) için geliştirilmiş; **asenkron veri toplama, Türkçe/İngilizce NLP duygu analizi, Spike/Webhook bildirimleri ve otomatik Dead Letter Queue (DLQ) kurtarma** yeteneklerine sahip bağımsız mikroservis.
+Canlı yayın klip otomasyonu (`stream_chat`), film analiz araçları (`movie_reviews`) ve piyasa tahmin sistemleri (`market_pulse`) için asenkron veri toplama, Türkçe/İngilizce NLP duygu/hype analizi, Spike/Webhook bildirimleri ve Dead Letter Queue (DLQ) kurtarma sunan FastAPI mikroservisi.
+
+| Alan | Değer |
+|---|---|
+| **Kategori** | Backend API + Web Kontrol Paneli |
+| **Teknoloji** | Python 3.11 + FastAPI + Uvicorn + SQLAlchemy |
+| **Port / URL** | `8001` · `http://localhost:8001/dashboard` |
+| **Başlatıcı** | `BASLAT.bat` (`start.ps1`) veya `docker compose up --build -d` |
+| **Doğrulama** | `.\.venv\Scripts\python.exe -m pytest` |
+
+## Özellikler
+
+- **Çok Dilli Duygu ve Hype Puanlama:** Türkçe/İngilizce Twitch sohbeti, film yorumu ve piyasa başlığı analizi; rutin sohbet gürültüsü filtreleme.
+- **Dayanıklı Orkestrasyon:** Eşzamanlılık kilidi, üstel geri çekilme, `logs/failed_batches.jsonl` DLQ yedekleme ve atomik kurtarma.
+- **Spike & Webhook Bildirimleri:** Ani pozitif hype veya negatif tepki patlamalarında dış servislere HTTP `POST` bildirimi.
+- **Canlı Panel ve Swagger UI:** `/dashboard`, `/docs` ve `/api/v1/health` uç noktaları.
+
+## Klasör Yapısı
+
+```text
+sentiment-engine/
+├── app/                    # FastAPI uygulaması, API rotaları, NLP/hype servisleri
+├── alembic/                # Veritabanı migration dosyaları
+├── scripts/                # Yük simülasyonu ve yardımcı betikler
+├── tests/                  # Pytest birim ve entegrasyon testleri
+├── BASLAT.bat & start.ps1  # Tek tık yerel başlatıcı (port 8001)
+├── Dockerfile              # Konteyner imajı
+├── docker-compose.yml      # PostgreSQL 16 + API orkestrasyonu
+├── requirements.txt        # Python bağımlılıkları
+├── AGENTS.md               # Mühendislik kuralları
+└── README.md
+```
+
+## Kurulum ve Çalıştırma
+
+### Yerel Başlatma (Windows — Önerilen)
+Proje klasöründeki **`BASLAT.bat`** dosyasına çift tıklayın (`.venv` ortamını otomatik algılar, `8001` portunu temizleyip yeniden başlatır ve kontrol panelini açar).
+
+### Docker Compose
+Tek komutla **PostgreSQL 16** ve **`sentiment-engine`** servisini ayağa kaldırın:
+
+```bash
+docker compose up --build -d
+```
+
+- **Web Dashboard:** http://localhost:8001/dashboard
+- **Swagger UI:** http://localhost:8001/docs
+- **Sağlık Kontrolü:** http://localhost:8001/api/v1/health
+
+## Testler ve Doğrulama
+
+```powershell
+# Yerel (.venv)
+.\.venv\Scripts\python.exe -m pytest
+
+# Docker içinde
+docker compose exec sentiment-engine pytest
+```
 
 ---
 
@@ -34,20 +91,6 @@ flowchart LR
     Orch --> Alert
     Alert -->|HTTP POST Webhook| Ext["Klip Otomasyonu & Dış Servisler"]
 ```
-
----
-
-## Hızlı Başlangıç (Docker Compose)
-
-Tek komutla **PostgreSQL 16** ve **`sentiment-engine`** servisini ayağa kaldırın:
-
-```bash
-docker compose up --build -d
-```
-
-- **Canlı Görsel Kontrol Paneli (Web Dashboard):** http://localhost:8001/dashboard
-- **Swagger UI (OpenAPI Dokümantasyonu):** http://localhost:8001/docs
-- **Sistem Sağlık Kontrolü:** http://localhost:8001/api/v1/health
 
 ---
 
